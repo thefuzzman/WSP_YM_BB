@@ -1,11 +1,26 @@
 #include <ESP32Servo.h>
+#include <ESP32Encoder.h>
 #include <WiFi.h>
 #include <WebServer.h>
 
 // ================== PINS ==================
-const int LEFT_SERVO_PIN   = 4;
-const int RIGHT_SERVO_PIN  = 5;
 const int WEAPON_SERVO_PIN = 6;
+
+// DRV8833 - Left Motor
+const int L_IN1 = 16;
+const int L_IN2 = 17;   // PWM capable
+
+// DRV8833 - Right Motor
+const int R_IN1 = 15;
+const int R_IN2 = 8;    // PWM capable
+
+// Encoders (Quadrature)
+ESP32Encoder encoderLeft;
+ESP32Encoder encoderRight;
+const int ENC_L_A = 18;   // C1 on left motor
+const int ENC_L_B = 21;   // C2 on left motor
+const int ENC_R_A = 19;   // C1 on right motor
+const int ENC_R_B = 22;   // C2 on right motor
 
 // RGB LED
 #define RGB_LED 48
@@ -20,28 +35,70 @@ const char* apPassword = "battle123";
 
 WebServer server(80);
 
-Servo leftServo;
-Servo rightServo;
 Servo weaponServo;
 
 int leftPos = 90, rightPos = 90, weaponPos = 90;
 
+// ====================== MOTOR CONTROL ======================
+void driveMotor(int in1, int in2, int speed) {
+  speed = constrain(speed, -255, 255);
+  
+  if (speed > 0) {                    // Forward
+    digitalWrite(in1, LOW);
+    analogWrite(in2, speed);
+  } 
+  else if (speed < 0) {               // Reverse
+    digitalWrite(in1, HIGH);
+    analogWrite(in2, -speed);
+  } 
+  else {                              // Coast (stop)
+    digitalWrite(in1, LOW);
+    digitalWrite(in2, LOW);
+  }
+}
+
+void setDrive(int leftCmd, int rightCmd) {   // 0-180 values from web
+  int leftThrottle = leftCmd - 90;           // -90 to +90
+  int rightThrottle = rightCmd - 90;
+  
+  // Scale to full motor range (you can adjust the map range if you want less aggressive power)
+  int leftSpeed = map(leftThrottle, -90, 90, -255, 255);
+  int rightSpeed = map(rightThrottle, -90, 90, -255, 255);
+  
+  driveMotor(L_IN1, L_IN2, leftSpeed);
+  driveMotor(R_IN1, R_IN2, rightSpeed);
+}
+
+// ====================== SETUP ======================
 void setup() {
   Serial.begin(115200);
   delay(200);
 
-  leftServo.attach(LEFT_SERVO_PIN, 500, 2400);
-  rightServo.attach(RIGHT_SERVO_PIN, 500, 2400);
-  weaponServo.attach(WEAPON_SERVO_PIN, 500, 2400);
+  // === Motor Driver Pins ===
+  pinMode(L_IN1, OUTPUT);
+  pinMode(L_IN2, OUTPUT);
+  pinMode(R_IN1, OUTPUT);
+  pinMode(R_IN2, OUTPUT);
+  
+  // Stop motors at start
+  driveMotor(L_IN1, L_IN2, 0);
+  driveMotor(R_IN1, R_IN2, 0);
 
-  leftServo.write(90);
-  rightServo.write(90);
+  // === Encoders ===
+  encoderLeft.attachHalfQuad(ENC_L_A, ENC_L_B);
+  encoderRight.attachHalfQuad(ENC_R_A, ENC_R_B);
+  encoderLeft.clearCount();
+  encoderRight.clearCount();
+
+  // === Weapon Servo ===
+  weaponServo.attach(WEAPON_SERVO_PIN, 500, 2400);
   weaponServo.write(90);
 
+  // === RGB ===
   pinMode(RGB_LED, OUTPUT);
   rgbOff();
 
-  Serial.println("\n=== AntBot-S3 Joystick + Weapon (Continuous Fix) ===");
+  Serial.println("\n=== AntBot-S3 N20 + DRV8833 + Weapon ===");
 
   WiFi.softAP(botSSID.c_str(), apPassword);
   Serial.print("AP SSID: ");
@@ -63,12 +120,22 @@ void loop() {
   // FAILSAFE
   if (botActive && (millis() - lastInputTime > FAILSAFE_TIMEOUT)) {
     Serial.println("FAILSAFE TRIGGERED");
-    leftPos = rightPos = weaponPos = 90;
-    leftServo.write(90);
-    rightServo.write(90);
+    driveMotor(L_IN1, L_IN2, 0);
+    driveMotor(R_IN1, R_IN2, 0);
     weaponServo.write(90);
+    weaponPos = 90;
+    leftPos = rightPos = 90;
     rgbOff();
     botActive = false;
+  }
+
+  // Optional: Print encoder counts for debugging (remove or slow down later)
+  static unsigned long lastPrint = 0;
+  if (millis() - lastPrint > 500) {
+    Serial.printf("Enc L: %d | R: %d\n", 
+                  (int)encoderLeft.getCount(), 
+                  (int)encoderRight.getCount());
+    lastPrint = millis();
   }
 }
 
@@ -256,18 +323,22 @@ void handleDrive() {
 
   if (server.hasArg("left")) {
     leftPos = constrain(server.arg("left").toInt(), 0, 180);
-    leftServo.write(leftPos);
   }
   if (server.hasArg("right")) {
     rightPos = constrain(server.arg("right").toInt(), 0, 180);
-    rightServo.write(rightPos);
   }
   if (server.hasArg("weapon")) {
     weaponPos = constrain(server.arg("weapon").toInt(), 0, 180);
     weaponServo.write(weaponPos);
   }
 
-  Serial.printf("Drive -> L:%d R:%d W:%d\n", leftPos, rightPos, weaponPos);
+  // Drive the N20 motors using the same 0-180 values the joystick sends
+  setDrive(leftPos, rightPos);
+
+  Serial.printf("Drive -> L:%d R:%d W:%d | EncL:%d EncR:%d\n", 
+                leftPos, rightPos, weaponPos,
+                (int)encoderLeft.getCount(), (int)encoderRight.getCount());
+
   updateRGB();
 
   server.send(200, "text/plain", "OK");
