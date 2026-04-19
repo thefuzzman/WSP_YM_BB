@@ -1,0 +1,12 @@
+This project is to create ant weight battle bots that use the following components and/or constraints:
+- ESP32 based
+- N20 motors
+- Wi-Fi and/or BLE based connectivity
+- 150g max (5.3oz)
+- Must fit within a 10cm (4 inch) cube
+- A fail-safe is required (bot must stop if signal
+- No liquid-based weapons, glue, adhesives, or explosives.
+- Generally, no nets, fabrics, or entangling weapons.
+- All sharp edges must be covered when outside the arena.
+- Robots must be constructed primarily from 3D printed parts
+-   Only PLA is allowed as a material (except TPU 85/90 for wheel covers if not using o-rings for grip)
