@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>AntBot Wiring Diagram</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@700;900&display=swap');
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: #0a0c0f;
+    color: #c8d8e8;
+    font-family: 'Share Tech Mono', monospace;
+    min-height: 100vh;
+    padding: 24px;
+  }
+
+  h1 {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 1.35em;
+    font-weight: 900;
+    color: #00e5ff;
+    letter-spacing: 0.12em;
+    text-align: center;
+    margin-bottom: 4px;
+    text-shadow: 0 0 18px #00e5ff88;
+  }
+  .subtitle {
+    text-align: center;
+    font-size: 0.78em;
+    color: #4a7a9b;
+    margin-bottom: 20px;
+    letter-spacing: 0.15em;
+  }
+
+  .diagram-wrap {
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    gap: 0;
+  }
+
+  svg {
+    display: block;
+    max-width: 100%;
+  }
+
+  /* --- PIN TABLE --- */
+  .tables {
+    display: flex;
+    gap: 18px;
+    justify-content: center;
+    flex-wrap: wrap;
+    margin-top: 22px;
+  }
+  .pin-table {
+    border: 1px solid #1a3a4a;
+    border-radius: 6px;
+    overflow: hidden;
+    min-width: 270px;
+  }
+  .pin-table caption {
+    background: #0d1f2d;
+    font-family: 'Orbitron', sans-serif;
+    font-size: 0.72em;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    padding: 7px 12px;
+    text-align: left;
+    border-bottom: 1px solid #1a3a4a;
+  }
+  .pin-table th {
+    background: #0d1f2d;
+    font-size: 0.7em;
+    padding: 5px 10px;
+    color: #4a7a9b;
+    letter-spacing: 0.08em;
+    border-bottom: 1px solid #1a3a4a;
+  }
+  .pin-table td {
+    padding: 5px 10px;
+    font-size: 0.78em;
+    border-bottom: 1px solid #111e28;
+  }
+  .pin-table tr:last-child td { border-bottom: none; }
+  .pin-table tr:nth-child(even) td { background: #0c1820; }
+
+  .col-pin  { color: #00e5ff; font-weight: bold; }
+  .col-sig  { color: #ffd740; }
+  .col-dest { color: #69ff47; }
+
+  .note-box {
+    margin: 20px auto 0;
+    max-width: 900px;
+    border: 1px solid #1a2e20;
+    border-radius: 6px;
+    background: #0c1810;
+    padding: 14px 18px;
+  }
+  .note-box h3 {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 0.72em;
+    color: #69ff47;
+    letter-spacing: 0.1em;
+    margin-bottom: 10px;
+  }
+  .note-box ul {
+    list-style: none;
+    font-size: 0.78em;
+    line-height: 1.9;
+    color: #a8c8b8;
+  }
+  .note-box ul li::before { content: "▸ "; color: #69ff47; }
+
+  .legend {
+    display: flex;
+    gap: 20px;
+    justify-content: center;
+    flex-wrap: wrap;
+    margin-top: 18px;
+    font-size: 0.73em;
+  }
+  .leg-item { display: flex; align-items: center; gap: 7px; }
+  .leg-swatch { width: 32px; height: 4px; border-radius: 2px; }
+</style>
+</head>
+<body>
+
+<h1>ANTBOT-S3 · WIRING DIAGRAM</h1>
+<p class="subtitle">ESP32-S3-WROOM-1 · DRV8833 · N20 MOTORS × 2 · SERVO</p>
+
+<div class="diagram-wrap">
+<svg width="960" height="620" viewBox="0 0 960 620" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- grid pattern -->
+    <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
+      <path d="M20 0 L0 0 0 20" fill="none" stroke="#ffffff08" stroke-width="0.5"/>
+    </pattern>
+    <!-- glow filters -->
+    <filter id="glow-cyan" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="glow-green" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="2.5" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="glow-yellow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="2.5" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="2" stdDeviation="6" flood-color="#000" flood-opacity="0.7"/>
+    </filter>
+    <!-- arrowheads -->
+    <marker id="arr-cyan" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+      <polygon points="0 0, 7 3.5, 0 7" fill="#00e5ff"/>
+    </marker>
+    <marker id="arr-green" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+      <polygon points="0 0, 7 3.5, 0 7" fill="#69ff47"/>
+    </marker>
+    <marker id="arr-yellow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+      <polygon points="0 0, 7 3.5, 0 7" fill="#ffd740"/>
+    </marker>
+    <marker id="arr-orange" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+      <polygon points="0 0, 7 3.5, 0 7" fill="#ff9800"/>
+    </marker>
+    <marker id="arr-red" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+      <polygon points="0 0, 7 3.5, 0 7" fill="#ff4444"/>
+    </marker>
+    <marker id="arr-gray" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+      <polygon points="0 0, 7 3.5, 0 7" fill="#556677"/>
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect width="960" height="620" fill="#0a0c0f"/>
+  <rect width="960" height="620" fill="url(#grid)"/>
+
+  <!-- ========== ESP32-S3 MODULE (centre) ========== -->
+  <g filter="url(#shadow)">
+    <rect x="360" y="200" width="200" height="280" rx="8" fill="#0d1f2d" stroke="#00e5ff" stroke-width="1.5"/>
+    <!-- module top label area -->
+    <rect x="360" y="200" width="200" height="28" rx="8" fill="#0a1825"/>
+    <rect x="360" y="220" width="200" height="8" fill="#0a1825"/>
+    <text x="460" y="220" text-anchor="middle" font-family="Orbitron,sans-serif" font-size="9" fill="#00e5ff" filter="url(#glow-cyan)" letter-spacing="1">ESP32-S3-WROOM-1</text>
+    <!-- antenna bump -->
+    <rect x="415" y="192" width="90" height="12" rx="3" fill="#0d1f2d" stroke="#00e5ff44" stroke-width="1"/>
+    <text x="460" y="201" text-anchor="middle" font-family="Share Tech Mono,monospace" font-size="7" fill="#00e5ff66">[ ANTENNA ]</text>
+  </g>
+
+  <!-- LEFT side pins of ESP32 -->
+  <!-- We'll show the GPIO pins used, left side = GPIO 15,16,17,18,19 -->
+  <g font-family="Share Tech Mono,monospace" font-size="8.5" fill="#c8d8e8">
+    <!-- Left pins -->
+    <text x="355" y="248" text-anchor="end" fill="#ffd740">3V3</text>
+    <circle cx="360" cy="245" r="3" fill="#ffd740"/>
+
+    <text x="355" y="265" text-anchor="end" fill="#ff4444">GND</text>
+    <circle cx="360" cy="262" r="3" fill="#ff4444"/>
+
+    <text x="355" y="282" text-anchor="end" fill="#69ff47">GPIO 6</text>
+    <circle cx="360" cy="279" r="3" fill="#69ff47"/>
+
+    <text x="355" y="299" text-anchor="end" fill="#00e5ff">GPIO 8</text>
+    <circle cx="360" cy="296" r="3" fill="#00e5ff"/>
+
+    <text x="355" y="316" text-anchor="end" fill="#00e5ff">GPIO 15</text>
+    <circle cx="360" cy="313" r="3" fill="#00e5ff"/>
+
+    <text x="355" y="333" text-anchor="end" fill="#00e5ff">GPIO 16</text>
+    <circle cx="360" cy="330" r="3" fill="#00e5ff"/>
+
+    <text x="355" y="350" text-anchor="end" fill="#00e5ff">GPIO 17</text>
+    <circle cx="360" cy="347" r="3" fill="#00e5ff"/>
+
+    <text x="355" y="367" text-anchor="end" fill="#ff9800">GPIO 18</text>
+    <circle cx="360" cy="364" r="3" fill="#ff9800"/>
+
+    <text x="355" y="384" text-anchor="end" fill="#ff9800">GPIO 19</text>
+    <circle cx="360" cy="381" r="3" fill="#ff9800"/>
+
+    <text x="355" y="401" text-anchor="end" fill="#ff9800">GPIO 21</text>
+    <circle cx="360" cy="398" r="3" fill="#ff9800"/>
+
+    <text x="355" y="418" text-anchor="end" fill="#ff9800">GPIO 22</text>
+    <circle cx="360" cy="415" r="3" fill="#ff9800"/>
+
+    <text x="355" y="435" text-anchor="end" fill="#ff4444">GND</text>
+    <circle cx="360" cy="432" r="3" fill="#ff4444"/>
+
+    <text x="355" y="452" text-anchor="end" fill="#ffd740">5V (VIN)</text>
+    <circle cx="360" cy="449" r="3" fill="#ffd740"/>
+  </g>
+
+  <!-- Right side pins -->
+  <g font-family="Share Tech Mono,monospace" font-size="8.5">
+    <text x="565" y="248" text-anchor="start" fill="#556677">TX / IO43</text>
+    <circle cx="560" cy="245" r="3" fill="#556677"/>
+    <text x="565" y="265" text-anchor="start" fill="#556677">RX / IO44</text>
+    <circle cx="560" cy="262" r="3" fill="#556677"/>
+    <text x="565" y="282" text-anchor="start" fill="#556677">IO1</text>
+    <circle cx="560" cy="279" r="3" fill="#556677"/>
+    <text x="565" y="299" text-anchor="start" fill="#556677">IO2</text>
+    <circle cx="560" cy="296" r="3" fill="#556677"/>
+    <text x="565" y="316" text-anchor="start" fill="#556677">IO3</text>
+    <circle cx="560" cy="313" r="3" fill="#556677"/>
+    <text x="565" y="333" text-anchor="start" fill="#556677">IO4</text>
+    <circle cx="560" cy="330" r="3" fill="#556677"/>
+    <text x="565" y="350" text-anchor="start" fill="#556677">IO5</text>
+    <circle cx="560" cy="347" r="3" fill="#556677"/>
+    <text x="565" y="367" text-anchor="start" fill="#556677">IO7</text>
+    <circle cx="560" cy="364" r="3" fill="#556677"/>
+    <text x="565" y="384" text-anchor="start" fill="#556677">IO9</text>
+    <circle cx="560" cy="381" r="3" fill="#556677"/>
+    <text x="565" y="401" text-anchor="start" fill="#556677">IO10</text>
+    <circle cx="560" cy="398" r="3" fill="#556677"/>
+    <text x="565" y="418" text-anchor="start" fill="#ffd740">3V3</text>
+    <circle cx="560" cy="415" r="3" fill="#ffd740"/>
+    <text x="565" y="435" text-anchor="start" fill="#ff4444">GND</text>
+    <circle cx="560" cy="432" r="3" fill="#ff4444"/>
+    <text x="565" y="452" text-anchor="start" fill="#ffd740">5V (VIN)</text>
+    <circle cx="560" cy="449" r="3" fill="#ffd740"/>
+  </g>
+
+  <!-- ESP32 GPIO 48 (RGB) - internal label -->
+  <text x="460" y="478" text-anchor="middle" font-family="Share Tech Mono,monospace" font-size="8" fill="#cc44ff">GPIO 48 · ONBOARD RGB</text>
+  <text x="460" y="490" text-anchor="middle" font-family="Share Tech Mono,monospace" font-size="7" fill="#993388">(No external wiring needed)</text>
+
+  <!-- ========== DRV8833 (LEFT) ========== -->
+  <g filter="url(#shadow)">
+    <rect x="60" y="230" width="150" height="200" rx="6" fill="#0d200f" stroke="#69ff47" stroke-width="1.5"/>
+    <rect x="60" y="230" width="150" height="22" rx="6" fill="#0a1a0c"/>
+    <rect x="60" y="244" width="150" height="8" fill="#0a1a0c"/>
+    <text x="135" y="245" text-anchor="middle" font-family="Orbitron,sans-serif" font-size="8.5" fill="#69ff47" filter="url(#glow-green)" letter-spacing="1">DRV8833</text>
+    <text x="135" y="258" text-anchor="middle" font-family="Share Tech Mono,monospace" font-size="7.5" fill="#4a8a5a">(LEFT MOTOR)</text>
+  </g>
+
+  <!-- DRV8833 Left pins -->
+  <g font-family="Share Tech Mono,monospace" font-size="8" fill="#c8d8e8">
+    <!-- Left side of DRV8833 board -->
+    <text x="58" y="280" text-anchor="end" fill="#ffd740">VM (Motor V+)</text>
+    <circle cx="60" cy="277" r="3" fill="#ffd740"/>
+
+    <text x="58" y="297" text-anchor="end" fill="#ff4444">GND</text>
+    <circle cx="60" cy="294" r="3" fill="#ff4444"/>
+
+    <text x="58" y="314" text-anchor="end" fill="#00e5ff">IN1</text>
+    <circle cx="60" cy="311" r="3" fill="#00e5ff"/>
+
+    <text x="58" y="331" text-anchor="end" fill="#00e5ff">IN2</text>
+    <circle cx="60" cy="328" r="3" fill="#00e5ff"/>
+
+    <text x="58" y="348" text-anchor="end" fill="#00e5ff">IN3</text>
+    <circle cx="60" cy="345" r="3" fill="#556677" opacity="0.5"/>
+
+    <text x="58" y="365" text-anchor="end" fill="#00e5ff">IN4</text>
+    <circle cx="60" cy="362" r="3" fill="#556677" opacity="0.5"/>
+
+    <!-- Right side - motor outputs -->
+    <text x="212" y="280" text-anchor="start" fill="#ffd740">VCC (Logic 3.3V)</text>
+    <circle cx="210" cy="277" r="3" fill="#ffd740"/>
+
+    <text x="212" y="297" text-anchor="start" fill="#ff4444">GND</text>
+    <circle cx="210" cy="294" r="3" fill="#ff4444"/>
+
+    <text x="212" y="314" text-anchor="start" fill="#69ff47">AOUT1</text>
+    <circle cx="210" cy="311" r="3" fill="#69ff47"/>
+
+    <text x="212" y="331" text-anchor="start" fill="#69ff47">AOUT2</text>
+    <circle cx="210" cy="328" r="3" fill="#69ff47"/>
+
+    <text x="212" y="348" text-anchor="start" fill="#556677">BOUT1</text>
+    <circle cx="210" cy="345" r="3" fill="#556677" opacity="0.5"/>
+
+    <text x="212" y="365" text-anchor="start" fill="#556677">BOUT2</text>
+    <circle cx="210" cy="362" r="3" fill="#556677" opacity="0.5"/>
+
+    <!-- SLP/FLT often tied -->
+    <text x="135" y="400" text-anchor="middle" fill="#ffd740">SLP → 3V3</text>
+    <text x="135" y="413" text-anchor="middle" fill="#556677">FLT (optional)</text>
+  </g>
+
+  <!-- ========== DRV8833 (RIGHT) ========== -->
+  <g filter="url(#shadow)">
+    <rect x="730" y="230" width="150" height="200" rx="6" fill="#0d200f" stroke="#69ff47" stroke-width="1.5"/>
+    <rect x="730" y="230" width="150" height="22" rx="6" fill="#0a1a0c"/>
+    <rect x="730" y="244" width="150" height="8" fill="#0a1a0c"/>
+    <text x="805" y="245" text-anchor="middle" font-family="Orbitron,sans-serif" font-size="8.5" fill="#69ff47" filter="url(#glow-green)" letter-spacing="1">DRV8833</text>
+    <text x="805" y="258" text-anchor="middle" font-family="Share Tech Mono,monospace" font-size="7.5" fill="#4a8a5a">(RIGHT MOTOR)</text>
+  </g>
+
+  <!-- DRV8833 Right pins -->
+  <g font-family="Share Tech Mono,monospace" font-size="8" fill="#c8d8e8">
+    <text x="728" y="280" text-anchor="end" fill="#ffd740">VM (Motor V+)</text>
+    <circle cx="730" cy="277" r="3" fill="#ffd740"/>
+
+    <text x="728" y="297" text-anchor="end" fill="#ff4444">GND</text>
+    <circle cx="730" cy="294" r="3" fill="#ff4444"/>
+
+    <text x="728" y="314" text-anchor="end" fill="#00e5ff">IN1</text>
+    <circle cx="730" cy="311" r="3" fill="#00e5ff"/>
+
+    <text x="728" y="331" text-anchor="end" fill="#00e5ff">IN2</text>
+    <circle cx="730" cy="328" r="3" fill="#00e5ff"/>
+
+    <text x="728" y="348" text-anchor="end" fill="#556677">IN3</text>
+    <circle cx="730" cy="345" r="3" fill="#556677" opacity="0.5"/>
+
+    <text x="728" y="365" text-anchor="end" fill="#556677">IN4</text>
+    <circle cx="730" cy="362" r="3" fill="#556677" opacity="0.5"/>
+
+    <text x="882" y="280" text-anchor="start" fill="#ffd740">VCC (Logic 3.3V)</text>
+    <circle cx="880" cy="277" r="3" fill="#ffd740"/>
+
+    <text x="882" y="297" text-anchor="start" fill="#ff4444">GND</text>
+    <circle cx="880" cy="294" r="3" fill="#ff4444"/>
+
+    <text x="882" y="314" text-anchor="start" fill="#69ff47">AOUT1</text>
+    <circle cx="880" cy="311" r="3" fill="#69ff47"/>
+
+    <text x="882" y="331" text-anchor="start" fill="#69ff47">AOUT2</text>
+    <circle cx="880" cy="328" r="3" fill="#69ff47"/>
+
+    <text x="882" y="348" text-anchor="start" fill="#556677">BOUT1</text>
+    <circle cx="880" cy="345" r="3" fill="#556677" opacity="0.5"/>
+
+    <text x="882" y="365" text-anchor="start" fill="#556677">BOUT2</text>
+    <circle cx="880" cy="362" r="3" fill="#556677" opacity="0.5"/>
+
+    <text x="805" y="400" text-anchor="middle" fill="#ffd740">SLP → 3V3</text>
+    <text x="805" y="413" text-anchor="middle" fill="#556677">FLT (optional)</text>
+  </g>
+
+  <!-- ========== LEFT N20 MOTOR ========== -->
+  <g filter="url(#shadow)">
+    <rect x="40" y="30" width="140" height="90" rx="6" fill="#1a1208" stroke="#ffd740" stroke-width="1.5"/>
+    <text x="110" y="52" text-anchor="middle" font-family="Orbitron,sans-serif" font-size="8" fill="#ffd740" filter="url(#glow-yellow)">N20 MOTOR</text>
+    <text x="110" y="66" text-anchor="middle" font-family="Share Tech Mono,monospace" font-size="8" fill="#aa8800">LEFT</text>
+    <!-- Motor body -->
+    <rect x="55" y="72" width="50" height="30" rx="4" fill="#1e1e1e" stroke="#555" stroke-width="1"/>
+    <rect x="105" y="78" width="20" height="18" rx="3" fill="#252525" stroke="#555" stroke-width="1"/>
+    <!-- Encoder box -->
+    <rect x="55" y="55" width="50" height="17" rx="3" fill="#0d1f0d" stroke="#69ff47" stroke-width="1"/>
+    <text x="80" y="67" text-anchor="middle" font-family="Share Tech Mono,monospace" font-size="6.5" fill="#69ff47">ENCODER</text>
+  </g>
+  <!-- Motor terminals -->
+  <text x="45" y="98" font-family="Share Tech Mono,monospace" font-size="7" fill="#ffd740">M+</text>
+  <circle cx="52" cy="95" r="3" fill="#ffd740"/>
+  <text x="45" y="112" font-family="Share Tech Mono,monospace" font-size="7" fill="#ffd740">M-</text>
+  <circle cx="52" cy="109" r="3" fill="#ffd740"/>
+  <!-- Encoder terminals -->
+  <text x="115" y="62" font-family="Share Tech Mono,monospace" font-size="7" fill="#69ff47">C1(A)</text>
+  <circle cx="112" cy="59" r="3" fill="#69ff47"/>
+  <text x="115" y="74" font-family="Share Tech Mono,monospace" font-size="7" fill="#ff9800">C2(B)</text>
+  <circle cx="112" cy="71" r="3" fill="#ff9800"/>
+
+  <!-- ========== RIGHT N20 MOTOR ========== -->
+  <g filter="url(#shadow)">
+    <rect x="750" y="30" width="140" height="90" rx="6" fill="#1a1208" stroke="#ffd740" stroke-width="1.5"/>
+    <text x="820" y="52" text-anchor="middle" font-family="Orbitron,sans-serif" font-size="8" fill="#ffd740" filter="url(#glow-yellow)">N20 MOTOR</text>
+    <text x="820" y="66" text-anchor="middle" font-family="Share Tech Mono,monospace" font-size="8" fill="#aa8800">RIGHT</text>
+    <rect x="765" y="72" width="50" height="30" rx="4" fill="#1e1e1e" stroke="#555" stroke-width="1"/>
+    <rect x="815" y="78" width="20" height="18" rx="3" fill="#252525" stroke="#555" stroke-width="1"/>
+    <rect x="765" y="55" width="50" height="17" rx="3" fill="#0d1f0d" stroke="#69ff47" stroke-width="1"/>
+    <text x="790" y="67" text-anchor="middle" font-family="Share Tech Mono,monospace" font-size="6.5" fill="#69ff47">ENCODER</text>
+  </g>
+  <text x="742" y="98" font-family="Share Tech Mono,monospace" font-size="7" fill="#ffd740" text-anchor="end">M+</text>
+  <circle cx="748" cy="95" r="3" fill="#ffd740"/>
+  <text x="742" y="112" font-family="Share Tech Mono,monospace" font-size="7" fill="#ffd740" text-anchor="end">M-</text>
+  <circle cx="748" cy="109" r="3" fill="#ffd740"/>
+  <text x="836" y="62" font-family="Share Tech Mono,monospace" font-size="7" fill="#69ff47">C1(A)</text>
+  <circle cx="835" cy="59" r="3" fill="#69ff47"/>
+  <text x="836" y="74" font-family="Share Tech Mono,monospace" font-size="7" fill="#ff9800">C2(B)</text>
+  <circle cx="835" cy="71" r="3" fill="#ff9800"/>
+
+  <!-- ========== SERVO ========== -->
+  <g filter="url(#shadow)">
+    <rect x="380" y="30" width="160" height="90" rx="6" fill="#12101e" stroke="#cc44ff" stroke-width="1.5"/>
+    <text x="460" y="52" text-anchor="middle" font-family="Orbitron,sans-serif" font-size="8.5" fill="#cc44ff" filter="url(#glow-cyan)">WEAPON SERVO</text>
+    <!-- Servo body -->
+    <rect x="400" y="58" width="70" height="42" rx="4" fill="#1a1830" stroke="#884499" stroke-width="1"/>
+    <rect x="460" y="65" width="60" height="28" rx="3" fill="#141228" stroke="#884499" stroke-width="1"/>
+    <circle cx="490" cy="79" r="10" fill="#0a0818" stroke="#cc44ff" stroke-width="1"/>
+    <circle cx="490" cy="79" r="4" fill="#cc44ff66"/>
+    <!-- 3-wire connector -->
+    <rect x="402" y="58" width="10" height="42" rx="2" fill="#ff4444" opacity="0.7"/>
+    <rect x="414" y="58" width="10" height="42" rx="2" fill="#1a1a1a" opacity="0.9"/>
+    <rect x="426" y="58" width="10" height="42" rx="2" fill="#ffd740" opacity="0.7"/>
+  </g>
+  <text x="403" y="110" font-family="Share Tech Mono,monospace" font-size="7" fill="#ff4444" text-anchor="middle">PWR</text>
+  <circle cx="403" cy="100" r="3" fill="#ff4444"/>
+  <text x="415" y="110" font-family="Share Tech Mono,monospace" font-size="7" fill="#888" text-anchor="middle">GND</text>
+  <circle cx="415" cy="100" r="3" fill="#333"/>
+  <text x="427" y="110" font-family="Share Tech Mono,monospace" font-size="7" fill="#ffd740" text-anchor="middle">SIG</text>
+  <circle cx="427" cy="100" r="3" fill="#ffd740"/>
+
+  <!-- ============================================================ -->
+  <!--  WIRES                                                        -->
+  <!-- ============================================================ -->
+
+  <!-- ── GPIO 16 → DRV Left IN1 (cyan, control) ── -->
+  <path d="M360,330 L320,330 L320,311 L210,311" stroke="#00e5ff" stroke-width="1.8" fill="none" stroke-dasharray="none" marker-end="url(#arr-cyan)" opacity="0.85"/>
+  <text x="275" y="325" font-family="Share Tech Mono,monospace" font-size="7.5" fill="#00e5ff" text-anchor="middle">GPIO16→IN1</text>
+
+  <!-- ── GPIO 17 → DRV Left IN2 (cyan, control) ── -->
+  <path d="M360,347 L310,347 L310,328 L210,328" stroke="#00e5ff" stroke-width="1.8" fill="none" marker-end="url(#arr-cyan)" opacity="0.85"/>
+  <text x="263" y="342" font-family="Share Tech Mono,monospace" font-size="7.5" fill="#00e5ff" text-anchor="middle">GPIO17→IN2</text>
+
+  <!-- ── GPIO 15 → DRV Right IN1 ── -->
+  <path d="M560,313 L610,313 L610,311 L730,311" stroke="#00e5ff" stroke-width="1.8" fill="none" marker-end="url(#arr-cyan)" opacity="0.85"/>
+  <text x="645" y="308" font-family="Share Tech Mono,monospace" font-size="7.5" fill="#00e5ff" text-anchor="middle">GPIO15→IN1</text>
+
+  <!-- ── GPIO 8 → DRV Right IN2 ── -->
+  <path d="M560,296 L620,296 L620,328 L730,328" stroke="#00e5ff" stroke-width="1.8" fill="none" marker-end="url(#arr-cyan)" opacity="0.85"/>
+  <text x="648" y="320" font-family="Share Tech Mono,monospace" font-size="7.5" fill="#00e5ff" text-anchor="middle">GPIO8→IN2</text>
+
+  <!-- ── DRV Left AOUT1 → Left Motor M+ (green) ── -->
+  <path d="M210,311 L230,311 L230,95 L52,95" stroke="#69ff47" stroke-width="1.8" fill="none" marker-end="url(#arr-green)" opacity="0.85"/>
+
+  <!-- ── DRV Left AOUT2 → Left Motor M- (green) ── -->
+  <path d="M210,328 L240,328 L240,109 L52,109" stroke="#69ff47" stroke-width="1.8" fill="none" marker-end="url(#arr-green)" opacity="0.75"/>
+
+  <!-- ── DRV Right AOUT1 → Right Motor M+ (green) ── -->
+  <path d="M880,311 L900,311 L900,95 L748,95" stroke="#69ff47" stroke-width="1.8" fill="none" marker-end="url(#arr-green)" opacity="0.85"/>
+
+  <!-- ── DRV Right AOUT2 → Right Motor M- (green) ── -->
+  <path d="M880,328 L908,328 L908,109 L748,109" stroke="#69ff47" stroke-width="1.8" fill="none" marker-end="url(#arr-green)" opacity="0.75"/>
+
+  <!-- ── GPIO 18 (ENC L A) → Left Motor C1 ── -->
+  <path d="M360,364 L340,364 L340,59 L112,59" stroke="#ff9800" stroke-width="1.6" fill="none" stroke-dasharray="6,3" marker-end="url(#arr-orange)" opacity="0.85"/>
+  <text x="228" y="54" font-family="Share Tech Mono,monospace" font-size="7" fill="#ff9800">GPIO18→EncL-A</text>
+
+  <!-- ── GPIO 22 (ENC L B) → Left Motor C2 ── -->
+  <path d="M360,415 L332,415 L332,71 L112,71" stroke="#ff9800" stroke-width="1.6" fill="none" stroke-dasharray="6,3" marker-end="url(#arr-orange)" opacity="0.75"/>
+  <text x="224" y="90" font-family="Share Tech Mono,monospace" font-size="7" fill="#ff9800">GPIO22→EncL-B</text>
+
+  <!-- ── GPIO 19 (ENC R A) → Right Motor C1 ── -->
+  <path d="M560,381 L580,381 L580,59 L835,59" stroke="#ff9800" stroke-width="1.6" fill="none" stroke-dasharray="6,3" marker-end="url(#arr-orange)" opacity="0.85"/>
+  <text x="707" y="54" font-family="Share Tech Mono,monospace" font-size="7" fill="#ff9800">GPIO19→EncR-A</text>
+
+  <!-- ── GPIO 21 (ENC R B) → Right Motor C2 ── -->
+  <path d="M560,398 L588,398 L588,71 L835,71" stroke="#ff9800" stroke-width="1.6" fill="none" stroke-dasharray="6,3" marker-end="url(#arr-orange)" opacity="0.75"/>
+  <text x="710" y="90" font-family="Share Tech Mono,monospace" font-size="7" fill="#ff9800">GPIO21→EncR-B</text>
+
+  <!-- ── GPIO 6 → Servo Signal ── -->
+  <path d="M360,279 L427,279 L427,100" stroke="#cc44ff" stroke-width="1.8" fill="none" marker-end="url(#arr-yellow)" opacity="0.9"/>
+  <text x="385" y="273" font-family="Share Tech Mono,monospace" font-size="7.5" fill="#cc44ff">GPIO6→SIG</text>
+
+  <!-- ── Power Rails ── -->
+  <!-- 5V rail horizontal top -->
+  <line x1="360" y1="449" x2="240" y2="449" stroke="#ffd740" stroke-width="2" opacity="0.6"/>
+  <line x1="240" y1="449" x2="240" y2="277" stroke="#ffd740" stroke-width="2" opacity="0.6" marker-end="url(#arr-yellow)"/>
+  <!-- label -->
+  <text x="244" y="355" font-family="Share Tech Mono,monospace" font-size="7.5" fill="#ffd740" transform="rotate(-90,244,355)">VBAT / 5V → VM</text>
+
+  <line x1="560" y1="449" x2="690" y2="449" stroke="#ffd740" stroke-width="2" opacity="0.6"/>
+  <line x1="690" y1="449" x2="690" y2="277" stroke="#ffd740" stroke-width="2" opacity="0.6" marker-end="url(#arr-yellow)"/>
+  <text x="694" y="355" font-family="Share Tech Mono,monospace" font-size="7.5" fill="#ffd740" transform="rotate(90,694,355)">VBAT / 5V → VM</text>
+
+  <!-- 3v3 to drv logic vcc left -->
+  <line x1="360" y1="245" x2="210" y2="245" stroke="#ffd740" stroke-width="1.5" stroke-dasharray="4,2" opacity="0.7" marker-end="url(#arr-yellow)"/>
+  <!-- 3v3 to drv logic vcc right -->
+  <line x1="560" y1="245" x2="880" y2="245" stroke="#ffd740" stroke-width="1.5" stroke-dasharray="4,2" opacity="0.7" marker-end="url(#arr-yellow)"/>
+
+  <!-- 3v3 to servo power -->
+  <path d="M560,415 L570,415 L570,170 L403,170 L403,100" stroke="#ffd740" stroke-width="1.5" stroke-dasharray="4,2" fill="none" opacity="0.7" marker-end="url(#arr-yellow)"/>
+  <text x="487" y="168" font-family="Share Tech Mono,monospace" font-size="7" fill="#ffd740" text-anchor="middle">3V3 → Servo PWR</text>
+
+  <!-- GND common bus -->
+  <line x1="360" y1="432" x2="280" y2="432" stroke="#ff4444" stroke-width="1.8" opacity="0.8"/>
+  <line x1="280" y1="432" x2="280" y2="294" stroke="#ff4444" stroke-width="1.8" opacity="0.8" marker-end="url(#arr-red)"/>
+  <text x="246" y="395" font-family="Share Tech Mono,monospace" font-size="7.5" fill="#ff4444" transform="rotate(-90,246,395)">GND BUS</text>
+
+  <line x1="560" y1="432" x2="660" y2="432" stroke="#ff4444" stroke-width="1.8" opacity="0.8"/>
+  <line x1="660" y1="432" x2="660" y2="294" stroke="#ff4444" stroke-width="1.8" opacity="0.8" marker-end="url(#arr-red)"/>
+
+  <!-- GND to servo -->
+  <path d="M280,432 L280,540 L415,540 L415,100" stroke="#ff4444" stroke-width="1.5" fill="none" opacity="0.6" marker-end="url(#arr-red)"/>
+  <text x="348" y="558" font-family="Share Tech Mono,monospace" font-size="7" fill="#ff4444">GND → Servo GND</text>
+
+  <!-- DRV SLP note arrows (short, grey) -->
+  <text x="135" y="388" text-anchor="middle" font-family="Share Tech Mono,monospace" font-size="7" fill="#ffd74088">↑ Tie SLP pin HIGH (to VCC)</text>
+  <text x="805" y="388" text-anchor="middle" font-family="Share Tech Mono,monospace" font-size="7" fill="#ffd74088">↑ Tie SLP pin HIGH (to VCC)</text>
+
+  <!-- Note: encoders also need 3v3 + GND (power for encoder sensor) -->
+  <text x="80" y="148" font-family="Share Tech Mono,monospace" font-size="7" fill="#ff9800" text-anchor="middle">ENC: 3V3 + GND</text>
+  <text x="80" y="158" font-family="Share Tech Mono,monospace" font-size="7" fill="#ff9800" text-anchor="middle">also needed!</text>
+  <text x="840" y="148" font-family="Share Tech Mono,monospace" font-size="7" fill="#ff9800" text-anchor="middle">ENC: 3V3 + GND</text>
+  <text x="840" y="158" font-family="Share Tech Mono,monospace" font-size="7" fill="#ff9800" text-anchor="middle">also needed!</text>
+
+  <!-- border frame -->
+  <rect x="2" y="2" width="956" height="616" rx="10" fill="none" stroke="#00e5ff22" stroke-width="2"/>
+</svg>
+</div>
+
+<!-- Legend -->
+<div class="legend">
+  <div class="leg-item"><div class="leg-swatch" style="background:#00e5ff"></div><span style="color:#00e5ff">Motor Control (IN1/IN2)</span></div>
+  <div class="leg-item"><div class="leg-swatch" style="background:#69ff47"></div><span style="color:#69ff47">Motor Output (AOUT → Motor)</span></div>
+  <div class="leg-item"><div class="leg-swatch" style="background:#ff9800; border-style:dashed; border-width:1px"></div><span style="color:#ff9800">Encoder Signal (dashed)</span></div>
+  <div class="leg-item"><div class="leg-swatch" style="background:#cc44ff"></div><span style="color:#cc44ff">Servo Signal</span></div>
+  <div class="leg-item"><div class="leg-swatch" style="background:#ffd740"></div><span style="color:#ffd740">Power / VCC</span></div>
+  <div class="leg-item"><div class="leg-swatch" style="background:#ff4444"></div><span style="color:#ff4444">GND</span></div>
+  <div class="leg-item"><div class="leg-swatch" style="background:#556677"></div><span style="color:#556677">Unused / NC</span></div>
+</div>
+
+<!-- Pin Tables -->
+<div class="tables">
+
+  <table class="pin-table">
+    <caption style="color:#00e5ff">ESP32-S3 → DRV8833 LEFT (Motor Control)</caption>
+    <tr><th>ESP32 GPIO</th><th>Signal</th><th>DRV8833 Left Pin</th></tr>
+    <tr><td class="col-pin">GPIO 16</td><td class="col-sig">L_IN1</td><td class="col-dest">IN1</td></tr>
+    <tr><td class="col-pin">GPIO 17</td><td class="col-sig">L_IN2 (PWM)</td><td class="col-dest">IN2</td></tr>
+    <tr><td class="col-pin">3V3</td><td class="col-sig">Logic Power</td><td class="col-dest">VCC</td></tr>
+    <tr><td class="col-pin">GND</td><td class="col-sig">Ground</td><td class="col-dest">GND</td></tr>
+    <tr><td class="col-pin">VBAT/5V+</td><td class="col-sig">Motor Power</td><td class="col-dest">VM</td></tr>
+    <tr><td class="col-pin">3V3</td><td class="col-sig">Enable</td><td class="col-dest">SLP (tie HIGH)</td></tr>
+  </table>
+
+  <table class="pin-table">
+    <caption style="color:#00e5ff">ESP32-S3 → DRV8833 RIGHT (Motor Control)</caption>
+    <tr><th>ESP32 GPIO</th><th>Signal</th><th>DRV8833 Right Pin</th></tr>
+    <tr><td class="col-pin">GPIO 15</td><td class="col-sig">R_IN1</td><td class="col-dest">IN1</td></tr>
+    <tr><td class="col-pin">GPIO 8</td><td class="col-sig">R_IN2 (PWM)</td><td class="col-dest">IN2</td></tr>
+    <tr><td class="col-pin">3V3</td><td class="col-sig">Logic Power</td><td class="col-dest">VCC</td></tr>
+    <tr><td class="col-pin">GND</td><td class="col-sig">Ground</td><td class="col-dest">GND</td></tr>
+    <tr><td class="col-pin">VBAT/5V+</td><td class="col-sig">Motor Power</td><td class="col-dest">VM</td></tr>
+    <tr><td class="col-pin">3V3</td><td class="col-sig">Enable</td><td class="col-dest">SLP (tie HIGH)</td></tr>
+  </table>
+
+  <table class="pin-table">
+    <caption style="color:#ff9800">ESP32-S3 → N20 Motor Encoders</caption>
+    <tr><th>ESP32 GPIO</th><th>Signal</th><th>Motor</th></tr>
+    <tr><td class="col-pin">GPIO 18</td><td class="col-sig">ENC_L_A</td><td class="col-dest">Left Motor C1</td></tr>
+    <tr><td class="col-pin">GPIO 22</td><td class="col-sig">ENC_L_B</td><td class="col-dest">Left Motor C2</td></tr>
+    <tr><td class="col-pin">GPIO 19</td><td class="col-sig">ENC_R_A</td><td class="col-dest">Right Motor C1</td></tr>
+    <tr><td class="col-pin">GPIO 21</td><td class="col-sig">ENC_R_B</td><td class="col-dest">Right Motor C2</td></tr>
+    <tr><td class="col-pin">3V3</td><td class="col-sig">Encoder VCC</td><td class="col-dest">Both Motors VCC</td></tr>
+    <tr><td class="col-pin">GND</td><td class="col-sig">Encoder GND</td><td class="col-dest">Both Motors GND</td></tr>
+  </table>
+
+  <table class="pin-table">
+    <caption style="color:#cc44ff">ESP32-S3 → Weapon Servo</caption>
+    <tr><th>ESP32 GPIO</th><th>Signal</th><th>Servo Wire</th></tr>
+    <tr><td class="col-pin">GPIO 6</td><td class="col-sig">PWM Signal</td><td class="col-dest">Signal (Yellow/White)</td></tr>
+    <tr><td class="col-pin">3V3 or 5V*</td><td class="col-sig">Servo Power</td><td class="col-dest">VCC (Red)</td></tr>
+    <tr><td class="col-pin">GND</td><td class="col-sig">Ground</td><td class="col-dest">GND (Black/Brown)</td></tr>
+  </table>
+
+  <table class="pin-table">
+    <caption style="color:#69ff47">DRV8833 → N20 Motor Outputs</caption>
+    <tr><th>DRV8833 Pin</th><th>Signal</th><th>Motor Terminal</th></tr>
+    <tr><td class="col-pin">AOUT1</td><td class="col-sig">Left Motor +</td><td class="col-dest">Left N20 M+</td></tr>
+    <tr><td class="col-pin">AOUT2</td><td class="col-sig">Left Motor −</td><td class="col-dest">Left N20 M−</td></tr>
+    <tr><td class="col-pin">AOUT1</td><td class="col-sig">Right Motor +</td><td class="col-dest">Right N20 M+</td></tr>
+    <tr><td class="col-pin">AOUT2</td><td class="col-sig">Right Motor −</td><td class="col-dest">Right N20 M−</td></tr>
+    <tr><td class="col-pin">BOUT1/BOUT2</td><td class="col-sig">Unused</td><td class="col-dest">NC (leave open)</td></tr>
+  </table>
+
+</div>
+
+<div class="note-box">
+  <h3>⚡ IMPORTANT WIRING NOTES</h3>
+  <ul>
+    <li><strong>DRV8833 SLP pin:</strong> Must be tied HIGH (to VCC/3V3) to enable the driver. If left floating, motors won't run.</li>
+    <li><strong>VM (Motor Power):</strong> Connect to your battery positive. The DRV8833 supports 2.7V–10.8V — match your N20 motor voltage (typically 3V, 5V, or 6V). Do NOT use the ESP32 5V pin for motors under load.</li>
+    <li><strong>VCC (Logic):</strong> Connect to ESP32 3V3. This powers the DRV8833 logic separately from the motor supply.</li>
+    <li><strong>Servo power:</strong> Small servos (< 500mA) may run from 3V3 if your regulator can handle it. For larger servos, power from a separate 5V BEC/regulator, sharing GND with the ESP32.</li>
+    <li><strong>N20 Encoder power:</strong> The encoder inside the N20 requires its own 3V3 and GND connections (in addition to the signal wires). Check your motor's datasheet for exact pinout — C1/C2 are the quadrature signals, VCC/GND power the Hall sensor.</li>
+    <li><strong>Common GND:</strong> All grounds (ESP32, both DRV8833 boards, motors, encoders, servo, battery) MUST share a common GND reference.</li>
+    <li><strong>Decoupling caps:</strong> Add a 100µF electrolytic + 100nF ceramic capacitor across VM and GND near each DRV8833 to suppress motor switching noise.</li>
+    <li><strong>GPIO 48 (RGB LED):</strong> This is the onboard WS2812 NeoPixel on the ESP32-S3-WROOM-1 — no external wiring needed.</li>
+    <li><strong>Each DRV8833 drives one motor</strong> (using the A-channel only). BOUT1/BOUT2 are unused — leave them open or use a second motor if desired.</li>
+  </ul>
+</div>
+
+</body>
+</html>
