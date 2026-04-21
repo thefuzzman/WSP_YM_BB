@@ -1,7 +1,9 @@
 This project is to create ant weight battle bots that use the following components and/or constraints:
 
 NOTE: THIS PROJECT IS A WORK IN PROGRESS AS WE BUILD THESE IN REAL TIME WITH OUR YOUTH GROUP. 
+
 NOTE: THAT MEANS THIS ARE CHANGING AND THINGS WILL CHANGE
+
 NOTE: USE AT YOUR OWN RISK
 
 - ESP32 based
