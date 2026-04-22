@@ -35,3 +35,4 @@ Tips gleaned from forums, sites, and AI queries
 
 ----------------------------------------------------------------------------------------------
 
+<img width="606" height="944" alt="image" src="https://github.com/user-attachments/assets/f9a42729-d767-4b13-94ec-bfac634d5d62" />
