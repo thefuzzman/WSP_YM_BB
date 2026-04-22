@@ -1,10 +1,10 @@
-This project is to create ant weight battle bots that use the following components and/or constraints:
-
 NOTE: THIS PROJECT IS A WORK IN PROGRESS AS WE BUILD THESE IN REAL TIME WITH OUR YOUTH GROUP. 
 
 NOTE: THAT MEANS THIS ARE CHANGING AND THINGS WILL CHANGE
 
 NOTE: USE AT YOUR OWN RISK
+
+This project is to create ant weight battle bots that use the following components and/or constraints:
 
 - ESP32 based (All wiring, etc. in this sketch is for ESP32-S3-WROOM-1, but will be testing with ESP32-S3-Zero (mini) )
 - N20 motors
@@ -39,3 +39,4 @@ Tips gleaned from forums, sites, and AI queries
 
 <img width="1388" height="591" alt="image" src="https://github.com/user-attachments/assets/d004ddd1-b398-4a3a-9696-512ce902f85b" />
 
+Arenas are 8x8 feet.  
