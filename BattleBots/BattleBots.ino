@@ -6,27 +6,21 @@
 // ================== PINS ==================
 const int WEAPON_SERVO_PIN = 6;
 
-// DRV8833 - Left Motor
-const int L_IN1 = 16;
-const int L_IN2 = 17;   // PWM capable
+const int L_IN1 = 8;
+const int L_IN2 = 15;
+const int R_IN1 = 16;
+const int R_IN2 = 17;
 
-// DRV8833 - Right Motor
-const int R_IN1 = 15;
-const int R_IN2 = 8;    // PWM capable
-
-// Encoders (Quadrature)
 ESP32Encoder encoderLeft;
 ESP32Encoder encoderRight;
-const int ENC_L_A = 18;   // C1 on left motor
-const int ENC_L_B = 21;   // C2 on left motor
-const int ENC_R_A = 19;   // C1 on right motor
-const int ENC_R_B = 22;   // C2 on right motor
+const int ENC_L_A = 18;
+const int ENC_L_B = 22;
+const int ENC_R_A = 19;
+const int ENC_R_B = 21;
 
-// RGB LED
 #define RGB_LED 48
 
-// FAILSAFE
-const unsigned long FAILSAFE_TIMEOUT = 2000;   // 2 seconds of no input
+const unsigned long FAILSAFE_TIMEOUT = 2000;
 bool botActive = false;
 unsigned long lastInputTime = 0;
 
@@ -34,7 +28,6 @@ String botSSID = "AntBot-S3-" + String((uint32_t)(ESP.getEfuseMac() >> 32), HEX)
 const char* apPassword = "battle123";
 
 WebServer server(80);
-
 Servo weaponServo;
 
 int leftPos = 90, rightPos = 90, weaponPos = 90;
@@ -42,29 +35,33 @@ int leftPos = 90, rightPos = 90, weaponPos = 90;
 // ====================== MOTOR CONTROL ======================
 void driveMotor(int in1, int in2, int speed) {
   speed = constrain(speed, -255, 255);
-  
-  if (speed > 0) {                    // Forward
+
+  if (speed == 0) {
+    // Hard brake — DRV8833 brake mode: both pins HIGH
+    digitalWrite(in1, HIGH);
+    digitalWrite(in2, HIGH);
+  } else if (speed > 0) {
+    // Forward
     digitalWrite(in1, LOW);
     analogWrite(in2, speed);
-  } 
-  else if (speed < 0) {               // Reverse
-    digitalWrite(in1, HIGH);
-    analogWrite(in2, -speed);
-  } 
-  else {                              // Coast (stop)
-    digitalWrite(in1, LOW);
+  } else {
+    // Reverse
+    analogWrite(in1, -speed);
     digitalWrite(in2, LOW);
   }
 }
 
-void setDrive(int leftCmd, int rightCmd) {   // 0-180 values from web
-  int leftThrottle = leftCmd - 90;           // -90 to +90
+void stopMotors() {
+  // Hard brake on both channels
+  digitalWrite(L_IN1, HIGH); digitalWrite(L_IN2, HIGH);
+  digitalWrite(R_IN1, HIGH); digitalWrite(R_IN2, HIGH);
+}
+
+void setDrive(int leftCmd, int rightCmd) {
+  int leftThrottle  = leftCmd  - 90;
   int rightThrottle = rightCmd - 90;
-  
-  // Scale to full motor range (you can adjust the map range if you want less aggressive power)
-  int leftSpeed = map(leftThrottle, -90, 90, -255, 255);
+  int leftSpeed  = map(leftThrottle,  -90, 90, -255, 255);
   int rightSpeed = map(rightThrottle, -90, 90, -255, 255);
-  
   driveMotor(L_IN1, L_IN2, leftSpeed);
   driveMotor(R_IN1, R_IN2, rightSpeed);
 }
@@ -74,42 +71,35 @@ void setup() {
   Serial.begin(115200);
   delay(200);
 
-  // === Motor Driver Pins ===
   pinMode(L_IN1, OUTPUT);
   pinMode(L_IN2, OUTPUT);
   pinMode(R_IN1, OUTPUT);
   pinMode(R_IN2, OUTPUT);
-  
-  // Stop motors at start
-  driveMotor(L_IN1, L_IN2, 0);
-  driveMotor(R_IN1, R_IN2, 0);
+  stopMotors();
 
-  // === Encoders ===
   encoderLeft.attachHalfQuad(ENC_L_A, ENC_L_B);
   encoderRight.attachHalfQuad(ENC_R_A, ENC_R_B);
   encoderLeft.clearCount();
   encoderRight.clearCount();
 
-  // === Weapon Servo ===
   weaponServo.attach(WEAPON_SERVO_PIN, 500, 2400);
   weaponServo.write(90);
 
-  // === RGB ===
   pinMode(RGB_LED, OUTPUT);
   rgbOff();
 
   Serial.println("\n=== AntBot-S3 N20 + DRV8833 + Weapon ===");
 
   WiFi.softAP(botSSID.c_str(), apPassword);
-  Serial.print("AP SSID: ");
-  Serial.println(botSSID);
-  Serial.print("AP IP: ");
-  Serial.println(WiFi.softAPIP());
+  Serial.print("AP SSID: "); Serial.println(botSSID);
+  Serial.print("AP IP: ");   Serial.println(WiFi.softAPIP());
 
-  server.on("/", handleRoot);
-  server.on("/drive", handleDrive);
+  server.on("/",         handleRoot);
+  server.on("/drive",    handleDrive);
+  server.on("/ping",     handlePing);
   server.on("/activate", handleActivate);
-  server.on("/status", handleStatus);
+  server.on("/status",   handleStatus);
+  server.on("/stop",     handleStop);
 
   server.begin();
 }
@@ -117,11 +107,9 @@ void setup() {
 void loop() {
   server.handleClient();
 
-  // FAILSAFE
   if (botActive && (millis() - lastInputTime > FAILSAFE_TIMEOUT)) {
     Serial.println("FAILSAFE TRIGGERED");
-    driveMotor(L_IN1, L_IN2, 0);
-    driveMotor(R_IN1, R_IN2, 0);
+    stopMotors();
     weaponServo.write(90);
     weaponPos = 90;
     leftPos = rightPos = 90;
@@ -129,32 +117,89 @@ void loop() {
     botActive = false;
   }
 
-  // Optional: Print encoder counts for debugging (remove or slow down later)
   static unsigned long lastPrint = 0;
   if (millis() - lastPrint > 500) {
-    Serial.printf("Enc L: %d | R: %d\n", 
-                  (int)encoderLeft.getCount(), 
-                  (int)encoderRight.getCount());
+    Serial.printf("Enc L: %d | R: %d | Active: %s\n",
+                  (int)encoderLeft.getCount(),
+                  (int)encoderRight.getCount(),
+                  botActive ? "YES" : "NO");
     lastPrint = millis();
   }
 }
 
-// RGB
+// ====================== RGB ======================
 void rgbOff() { neopixelWrite(RGB_LED, 0, 0, 0); }
 void setRGB(uint8_t r, uint8_t g, uint8_t b) { neopixelWrite(RGB_LED, r, g, b); }
 
 void updateRGB() {
-  int ls = leftPos - 90;
+  int ls = leftPos  - 90;
   int rs = rightPos - 90;
-  if (ls > 15 && rs > 15)       setRGB(0, 255, 0);
+  if      (ls > 15 && rs > 15)   setRGB(0, 255, 0);
   else if (ls < -15 && rs < -15) setRGB(255, 0, 0);
-  else if (abs(ls - rs) > 15)   setRGB(255, 0, 255);
-  else                          rgbOff();
+  else if (abs(ls - rs) > 15)    setRGB(255, 0, 255);
+  else                           rgbOff();
+}
+
+// ====================== HANDLERS ======================
+void handlePing() {
+  if (!botActive) { server.send(200, "text/plain", "NOT_ACTIVE"); return; }
+  lastInputTime = millis();
+  server.send(200, "text/plain", "PONG");
+}
+
+void handleStop() {
+  stopMotors();
+  weaponServo.write(90);
+  leftPos = rightPos = weaponPos = 90;
+  rgbOff();
+  server.send(200, "text/plain", "STOPPED");
+}
+
+void handleDrive() {
+  if (!botActive) { server.send(200, "text/plain", "NOT_ACTIVE"); return; }
+
+  int newLeft   = server.hasArg("left")   ? constrain(server.arg("left").toInt(),   0, 180) : leftPos;
+  int newRight  = server.hasArg("right")  ? constrain(server.arg("right").toInt(),  0, 180) : rightPos;
+  int newWeapon = server.hasArg("weapon") ? constrain(server.arg("weapon").toInt(), 0, 180) : weaponPos;
+
+  bool hasMotion = (abs(newLeft - 90)   > 5) ||
+                   (abs(newRight - 90)  > 5) ||
+                   (abs(newWeapon - 90) > 5);
+
+  leftPos   = newLeft;
+  rightPos  = newRight;
+  weaponPos = newWeapon;
+
+  setDrive(leftPos, rightPos);
+  weaponServo.write(weaponPos);
+  updateRGB();
+
+  if (hasMotion) lastInputTime = millis();
+
+  Serial.printf("Drive -> L:%d R:%d W:%d [%s] | EncL:%d EncR:%d\n",
+                leftPos, rightPos, weaponPos,
+                hasMotion ? "MOTION" : "neutral",
+                (int)encoderLeft.getCount(),
+                (int)encoderRight.getCount());
+
+  server.send(200, "text/plain", "OK");
+}
+
+void handleActivate() {
+  botActive     = true;
+  lastInputTime = millis();
+  Serial.println("Bot ACTIVATED");
+  server.send(200, "text/plain", "ACTIVATED");
+}
+
+void handleStatus() {
+  String json = "{\"active\":" + String(botActive ? "true" : "false") + "}";
+  server.send(200, "application/json", json);
 }
 
 // ====================== WEB PAGE ======================
 void handleRoot() {
-  String html = 
+  String html =
     "<!DOCTYPE html>\n"
     "<html>\n"
     "<head>\n"
@@ -175,10 +220,12 @@ void handleRoot() {
     "    .weapon-slider { width:70px; height:340px; accent-color:#ff0; }\n"
     "    .value { font-size:2.1em; margin-top:15px; }\n"
     "    .hidden { display:none !important; }\n"
+    "    #pingDot { position:fixed; bottom:12px; right:18px; width:10px; height:10px; border-radius:50%; background:#555; }\n"
     "  </style>\n"
     "</head>\n"
     "<body>\n"
     "  <h1>" + botSSID + "</h1>\n"
+    "  <div id=\"pingDot\"></div>\n"
     "\n"
     "  <div id=\"activateScreen\" class=\"activate-screen\">\n"
     "    <button class=\"activate-btn\" onclick=\"activateBot()\">ACTIVATE BOT</button>\n"
@@ -206,6 +253,7 @@ void handleRoot() {
     "    let isDragging = false;\n"
     "    const base = document.getElementById('joyBase');\n"
     "    const knob = document.getElementById('joyKnob');\n"
+    "    const pingDot = document.getElementById('pingDot');\n"
     "\n"
     "    function activateBot() {\n"
     "      fetch('/activate').then(() => {\n"
@@ -215,14 +263,20 @@ void handleRoot() {
     "      });\n"
     "    }\n"
     "\n"
-    "    function checkStatus() {\n"
-    "      fetch('/status').then(r => r.json()).then(data => {\n"
-    "        if (!data.active && botActive) {\n"
-    "          botActive = false;\n"
-    "          document.getElementById('controlScreen').classList.add('hidden');\n"
-    "          document.getElementById('activateScreen').classList.remove('hidden');\n"
-    "        }\n"
-    "      });\n"
+    "    function sendPing() {\n"
+    "      if (!botActive) return;\n"
+    "      fetch('/ping')\n"
+    "        .then(r => r.text())\n"
+    "        .then(t => {\n"
+    "          if (t === 'NOT_ACTIVE') {\n"
+    "            botActive = false;\n"
+    "            document.getElementById('controlScreen').classList.add('hidden');\n"
+    "            document.getElementById('activateScreen').classList.remove('hidden');\n"
+    "          }\n"
+    "          pingDot.style.background = '#0f0';\n"
+    "          setTimeout(() => pingDot.style.background = '#555', 200);\n"
+    "        })\n"
+    "        .catch(() => { pingDot.style.background = '#f00'; });\n"
     "    }\n"
     "\n"
     "    function moveKnob(clientX, clientY) {\n"
@@ -230,7 +284,7 @@ void handleRoot() {
     "      isDragging = true;\n"
     "      const rect = base.getBoundingClientRect();\n"
     "      let x = clientX - rect.left - 115;\n"
-    "      let y = clientY - rect.top - 115;\n"
+    "      let y = clientY - rect.top  - 115;\n"
     "      const dist = Math.sqrt(x*x + y*y);\n"
     "      if (dist > 115) { x = (x/dist)*115; y = (y/dist)*115; }\n"
     "      knob.style.transform = `translate(${x-37.5}px, ${y-37.5}px)`;\n"
@@ -243,23 +297,23 @@ void handleRoot() {
     "      isDragging = false;\n"
     "      knob.style.transform = 'translate(-37.5px, -37.5px)';\n"
     "      currentX = currentY = 0;\n"
-    "      sendDrive();\n"
+    "      fetch('/stop');\n"
     "    }\n"
     "\n"
     "    function sendDrive() {\n"
     "      if (!botActive) return;\n"
     "      const now = Date.now();\n"
-    "      if (now - lastSend < 40) return;   // Fast updates while holding\n"
+    "      if (now - lastSend < 40) return;\n"
     "      lastSend = now;\n"
-    "\n"
-    "      let forward = currentY * 90;\n"
-    "      let steer = currentX * 65;          // Slightly stronger steering\n"
-    "      let left = Math.round(90 + forward + steer);\n"
+    "      const forward = currentY * 90;\n"
+    "      const steer   = currentX * 65;\n"
+    "      let left  = Math.round(90 + forward + steer);\n"
     "      let right = Math.round(90 + forward - steer);\n"
-    "      left = Math.max(0, Math.min(180, left));\n"
+    "      left  = Math.max(0, Math.min(180, left));\n"
     "      right = Math.max(0, Math.min(180, right));\n"
-    "\n"
-    "      fetch(`/drive?left=${left}&right=${right}&weapon=${weaponPos}`);\n"
+    "      if (Math.abs(left-90) > 5 || Math.abs(right-90) > 5 || Math.abs(weaponPos-90) > 5) {\n"
+    "        fetch(`/drive?left=${left}&right=${right}&weapon=${weaponPos}`);\n"
+    "      }\n"
     "    }\n"
     "\n"
     "    function updateWeapon(val) {\n"
@@ -270,76 +324,30 @@ void handleRoot() {
     "    }\n"
     "\n"
     "    function stopAll() {\n"
-    "      fetch('/drive?left=90&right=90&weapon=90');\n"
-    "      resetKnob();\n"
+    "      fetch('/stop');\n"
+    "      isDragging = false;\n"
+    "      knob.style.transform = 'translate(-37.5px, -37.5px)';\n"
+    "      currentX = currentY = 0;\n"
+    "      weaponPos = 90;\n"
     "      document.getElementById('weaponSlider').value = 90;\n"
     "      document.getElementById('weaponValue').innerText = 90;\n"
     "    }\n"
     "\n"
-    "    // Continuous sending while finger is down\n"
-    "    setInterval(() => {\n"
-    "      if (isDragging && botActive) sendDrive();\n"
-    "    }, 45);\n"
+    "    setInterval(() => { if (isDragging && botActive) sendDrive(); }, 45);\n"
+    "    setInterval(sendPing, 500);\n"
     "\n"
-    "    // Touch events\n"
     "    base.addEventListener('touchstart', e => { e.preventDefault(); moveKnob(e.touches[0].clientX, e.touches[0].clientY); });\n"
     "    base.addEventListener('touchmove',  e => { e.preventDefault(); moveKnob(e.touches[0].clientX, e.touches[0].clientY); });\n"
     "    base.addEventListener('touchend',   resetKnob);\n"
     "\n"
-    "    // Mouse support\n"
     "    base.addEventListener('mousedown', e => {\n"
     "      const move = ev => moveKnob(ev.clientX, ev.clientY);\n"
     "      document.addEventListener('mousemove', move);\n"
     "      document.addEventListener('mouseup', () => { document.removeEventListener('mousemove', move); resetKnob(); }, {once:true});\n"
     "    });\n"
-    "\n"
-    "    setInterval(checkStatus, 800);\n"
     "  </script>\n"
     "</body>\n"
     "</html>";
 
   server.send(200, "text/html", html);
-}
-
-void handleActivate() {
-  botActive = true;
-  lastInputTime = millis();
-  Serial.println("Bot ACTIVATED");
-  server.send(200, "text/plain", "ACTIVATED");
-}
-
-void handleStatus() {
-  String json = "{\"active\":" + String(botActive ? "true" : "false") + "}";
-  server.send(200, "application/json", json);
-}
-
-void handleDrive() {
-  if (!botActive) {
-    server.send(200, "text/plain", "NOT_ACTIVE");
-    return;
-  }
-
-  lastInputTime = millis();
-
-  if (server.hasArg("left")) {
-    leftPos = constrain(server.arg("left").toInt(), 0, 180);
-  }
-  if (server.hasArg("right")) {
-    rightPos = constrain(server.arg("right").toInt(), 0, 180);
-  }
-  if (server.hasArg("weapon")) {
-    weaponPos = constrain(server.arg("weapon").toInt(), 0, 180);
-    weaponServo.write(weaponPos);
-  }
-
-  // Drive the N20 motors using the same 0-180 values the joystick sends
-  setDrive(leftPos, rightPos);
-
-  Serial.printf("Drive -> L:%d R:%d W:%d | EncL:%d EncR:%d\n", 
-                leftPos, rightPos, weaponPos,
-                (int)encoderLeft.getCount(), (int)encoderRight.getCount());
-
-  updateRGB();
-
-  server.send(200, "text/plain", "OK");
 }
