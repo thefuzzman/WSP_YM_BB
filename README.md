@@ -1,5 +1,7 @@
 NOTE: THIS PROJECT IS A WORK IN PROGRESS AS WE BUILD THESE IN REAL TIME WITH OUR YOUTH GROUP. 
 
+NOTE: They have little coding experience, so code is heavily commented which may just be noise to you
+
 NOTE: THAT MEANS THIS ARE CHANGING AND THINGS WILL CHANGE
 
 NOTE: USE AT YOUR OWN RISK
