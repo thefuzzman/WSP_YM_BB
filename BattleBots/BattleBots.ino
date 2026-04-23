@@ -274,8 +274,8 @@ void updateRGB();
 void driveMotor(int in1, int in2, int speed) {
   speed = constrain(speed, -255, 255);
   if (speed == 0) {
-    analogWrite(in1, 255);   // 100% duty = HIGH = DRV8833 brake, via LEDC
-    analogWrite(in2, 255);   // same peripheral as the drive commands, no bleed
+    analogWrite(in1, 255);
+    analogWrite(in2, 255);
   } else if (speed > 0) {
     analogWrite(in1, 0);
     analogWrite(in2, speed);
@@ -343,7 +343,7 @@ void setup() {
   Serial.println("\n=== AntBot-S3  |  N20 + DRV8833 + Weapon ===");
 
   // ----------------------------------------------------------
-  //     WiFi initialisation
+  //     WiFi - Get it up and running...
   // ----------------------------------------------------------
 #ifdef CONNECTION_WIFI
   Serial.println("[MODE] WiFi AP");
@@ -365,7 +365,7 @@ void setup() {
 #endif
 
   // ----------------------------------------------------------
-  //     BLE initialisation
+  //     Or, if not WiFi, get BLE running
   // ----------------------------------------------------------
 #ifdef CONNECTION_BLE
   Serial.println("[MODE] BLE");
@@ -468,10 +468,7 @@ void handleStop() {
 
 // FIX: Emergency stop (STOP ALL button).  Halts motors AND clears
 // botActive so any in-flight /drive requests that arrive after this
-// are rejected with NOT_ACTIVE -- the race condition that caused
-// "STOP ALL does nothing" is closed here.  The user must press
-// ACTIVATE again to resume, which is the correct behavior for an
-// emergency stop on a combat robot.
+// are rejected with NOT_ACTIVE
 void handleDeactivate() {
   stopMotors();
   weaponServo.write(90);
@@ -586,9 +583,6 @@ void handleRoot() {
     "    const knob = document.getElementById('joyKnob');\n"
     "    const pingDot = document.getElementById('pingDot');\n"
     "\n"
-    // FIX: Shared helper that fully resets client state and shows the
-    // activate screen.  Called both from stopAll() and from the ping
-    // handler when the server returns NOT_ACTIVE (e.g. after a failsafe).
     "    function showActivateScreen() {\n"
     "      botActive = false;\n"
     "      isDragging = false;\n"
@@ -625,11 +619,6 @@ void handleRoot() {
     "      currentX = x / 115; currentY = -y / 115;\n"
     "      sendDrive();\n"
     "    }\n"
-    // FIX: resetKnob handles both touchend AND touchcancel.
-    // touchcancel fires when the OS interrupts the touch (e.g. incoming
-    // notification, palm rejection, second finger on some devices).
-    // Without it the isDragging flag could stay true silently, keeping
-    // the 45ms drive interval alive even after the finger is gone.
     "    function resetKnob() {\n"
     "      isDragging = false;\n"
     "      knob.style.transform = 'translate(-37.5px, -37.5px)';\n"
@@ -654,12 +643,6 @@ void handleRoot() {
     "      document.getElementById('weaponValue').innerText = weaponPos;\n"
     "      sendDrive();\n"
     "    }\n"
-    // FIX: stopAll() now calls /deactivate instead of /stop.
-    // /deactivate clears botActive on the server, so any /drive requests
-    // that are already in-flight when the button is pressed are rejected
-    // with NOT_ACTIVE rather than restarting the motors.  This closes the
-    // race condition that made STOP ALL appear to do nothing.
-    // The user must press ACTIVATE again -- correct for an emergency stop.
     "    function stopAll() {\n"
     "      fetch('/deactivate');\n"
     "      weaponPos = 90;\n"
