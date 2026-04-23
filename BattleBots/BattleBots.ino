@@ -1,23 +1,23 @@
-// This is a comment.  
-// Comments are ignored when the code
-// is compiled and uploaded to the device
-// Any segment - such as the next one - that can be modified
-// to suit your needs will be prefaced with:
+//    This is a comment.  
+//    Comments are ignored when the code
+//    is compiled and uploaded to the device
+//    Any segment - such as the next one - that can be modified
+//    to suit your needs will be prefaced with:
 
 // ==================== EDIT AS NEEDED =====================
 // Some descriptive text here
 // =========================================================
 
-// And have a line under the editable segment that looks like
-// this
+//    And have a line under the editable segment that looks like
+//    this
 
 // ================= END OF EDITABLE SEGMENT ================
 
-// This is a baseline sketch only - it will be usable as-is, 
-// however you'll likely need to modify to meet what you want
-// out of the code
+//    This is a baseline sketch only - it will be usable as-is, 
+//    however you'll likely need to modify to meet what you want
+//    out of the code
 
-// Have fun! - Adam
+//    Have fun! - Adam
 
 // ============================================================
 //  SELECT YOUR CONNECTION MODE — uncomment exactly ONE:
@@ -74,7 +74,13 @@ const int ENC_R_B = 21;
 #define RGB_LED 48
 
 // ================== SHARED STATE ==================
-const unsigned long FAILSAFE_TIMEOUT = 2000;
+
+// FIX: Tightened from 2000ms to 750ms.  The drive loop sends commands
+// every ~40ms when the joystick is touched, so 750ms is plenty of
+// headroom for normal use while stopping the bot much faster after
+// input is released.
+const unsigned long FAILSAFE_TIMEOUT = 750;
+
 bool     botActive    = false;
 unsigned long lastInputTime = 0;
 
@@ -87,7 +93,7 @@ Servo weaponServo;
 // Change "botSSID" and/or "apPassword" as you see fit
 // =========================================================
 // ============================================================
-//  WiFi-only globals
+//     WiFi-only globals
 // ============================================================
 #ifdef CONNECTION_WIFI
   String      botSSID   = "AntBot-S3-" + String((uint32_t)(ESP.getEfuseMac() >> 32), HEX);
@@ -102,52 +108,53 @@ Servo weaponServo;
   void handleActivate();
   void handleStatus();
   void handleStop();
+  void handleDeactivate();   // FIX: emergency stop — halts motors AND clears botActive
 #endif
 
 // ============================================================
-//  BLE-only globals
-//  This segment is only used if you chose to comment out
-//  the definitions at the top for Wi-Fi and uncomment the BLE
-//  portion
+//     BLE-only globals
+//     This segment is only used if you chose to comment out
+//     the definitions at the top for Wi-Fi and uncomment the BLE
+//     portion
 // ============================================================
 #ifdef CONNECTION_BLE
   // ---- UUIDs ----
-  // Copy these into your Android app exactly as shown.
+  //   Copy these into your Android app exactly as shown.
   #define BLE_SERVICE_UUID      "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
-  #define BLE_CMD_CHAR_UUID     "beb5483e-36e1-4688-b7f5-ea07361b26a8"  // WRITE (Android → Bot)
-  #define BLE_RSP_CHAR_UUID     "6e400003-b5a3-f393-e0a9-e50e24dcca9e"  // NOTIFY (Bot → Android)
+  #define BLE_CMD_CHAR_UUID     "beb5483e-36e1-4688-b7f5-ea07361b26a8"  // WRITE (Android -> Bot)
+  #define BLE_RSP_CHAR_UUID     "6e400003-b5a3-f393-e0a9-e50e24dcca9e"  // NOTIFY (Bot -> Android)
 
   BLEServer*         pServer    = nullptr;
   BLECharacteristic* pCmdChar   = nullptr;   // receive commands
   BLECharacteristic* pRspChar   = nullptr;   // send responses / notifications
   bool               bleConnected = false;
-  // The below is just to document what the BLE protocol commands are
-  // Since you'll need to write your own Android application, having them 
-  // referenced is helpful
+  //    The below is just to document what the BLE protocol commands are
+  //    Since you'll need to write your own Android application, having them 
+  //    referenced is helpful
   //
-  //   "ACTIVATE"          → enable bot controls
-  //   "STOP"              → stop motors + weapon, keep active
-  //   "PING"              → keepalive (resets failsafe timer)
-  //   "D,LLL,RRR,WWW"     → drive  (e.g. "D,090,135,090")
+  //      "ACTIVATE"          -> enable bot controls
+  //      "STOP"              -> stop motors + weapon, keep active
+  //      "PING"              -> keepalive (does NOT reset failsafe timer)
+  //      "D,LLL,RRR,WWW"     -> drive  (e.g. "D,090,135,090")
   //                          LLL / RRR / WWW are 0-180 servo-style values
   //
-  // Android reads notifications from BLE_RSP_CHAR_UUID:
-  //   "ACTIVATED"         → bot is now active
-  //   "STOPPED"           → motors stopped
-  //   "PONG"              → reply to PING
-  //   "OK"                → drive command accepted
-  //   "NOT_ACTIVE"        → command rejected, call ACTIVATE first
-  //   "STATUS,true|false" → bot active state
-  //   "ENC,L,R"           → encoder counts (sent every 500 ms when connected)
+  //    Android reads notifications from BLE_RSP_CHAR_UUID:
+  //      "ACTIVATED"         -> bot is now active
+  //      "STOPPED"           -> motors stopped
+  //      "PONG"              -> reply to PING
+  //      "OK"                -> drive command accepted
+  //      "NOT_ACTIVE"        -> command rejected, call ACTIVATE first
+  //      "STATUS,true|false" -> bot active state
+  //      "ENC,L,R"           -> encoder counts (sent every 500 ms when connected)
 
-  // ---- Helpers ----
+  //    ---- Helpers ----
   void bleSend(const String& msg) {
     if (!bleConnected || pRspChar == nullptr) return;
     pRspChar->setValue(msg.c_str());
     pRspChar->notify();
   }
 
-  // ---- Server callbacks ----
+  //    ---- Server callbacks ----
   class BotServerCallbacks : public BLEServerCallbacks {
     void onConnect(BLEServer* s) override {
       bleConnected = true;
@@ -157,16 +164,16 @@ Servo weaponServo;
     void onDisconnect(BLEServer* s) override {
       bleConnected  = false;
       botActive     = false;
-      Serial.println("[BLE] Client disconnected — failsafe");
+      Serial.println("[BLE] Client disconnected -- failsafe");
       stopMotors();
       weaponServo.write(90);
       rgbOff();
-      // Restart advertising so a new client can connect
+      //    Restart advertising so a new client can connect
       BLEDevice::startAdvertising();
     }
   };
 
-  // ---- Command characteristic callbacks ----
+  //    ---- Command characteristic callbacks ----
   class CmdCallbacks : public BLECharacteristicCallbacks {
     void onWrite(BLECharacteristic* pChar) override {
       String cmd = String(pChar->getValue().c_str());
@@ -183,9 +190,11 @@ Servo weaponServo;
       }
 
       // ---- PING ----
+      // FIX: PING is a connection keepalive only -- it does NOT reset
+      // lastInputTime.  Only actual drive commands with detected motion
+      // should reset the failsafe timer.
       if (cmd == "PING") {
         if (!botActive) { bleSend("NOT_ACTIVE"); return; }
-        lastInputTime = millis();
         bleSend("PONG");
         return;
       }
@@ -231,7 +240,7 @@ Servo weaponServo;
 
         if (hasMotion) lastInputTime = millis();
 
-        Serial.printf("[BLE] Drive → L:%d R:%d W:%d [%s]\n",
+        Serial.printf("[BLE] Drive -> L:%d R:%d W:%d [%s]\n",
                       leftPos, rightPos, weaponPos,
                       hasMotion ? "MOTION" : "neutral");
         bleSend("OK");
@@ -250,7 +259,7 @@ Servo weaponServo;
 #endif  // CONNECTION_BLE
 
 // ============================================================
-//  Forward declarations (shared)
+//     Forward declarations (shared)
 // ============================================================
 void driveMotor(int in1, int in2, int speed);
 void stopMotors();
@@ -260,26 +269,25 @@ void setRGB(uint8_t r, uint8_t g, uint8_t b);
 void updateRGB();
 
 // ============================================================
-//  MOTOR CONTROL  (shared)
+//     MOTOR CONTROL  (shared)
 // ============================================================
 void driveMotor(int in1, int in2, int speed) {
   speed = constrain(speed, -255, 255);
   if (speed == 0) {
-    // Hard brake — DRV8833 brake mode
-    digitalWrite(in1, HIGH);
-    digitalWrite(in2, HIGH);
+    analogWrite(in1, 255);   // 100% duty = HIGH = DRV8833 brake, via LEDC
+    analogWrite(in2, 255);   // same peripheral as the drive commands, no bleed
   } else if (speed > 0) {
-    digitalWrite(in1, LOW);
+    analogWrite(in1, 0);
     analogWrite(in2, speed);
   } else {
     analogWrite(in1, -speed);
-    digitalWrite(in2, LOW);
+    analogWrite(in2, 0);
   }
 }
 
 void stopMotors() {
-  digitalWrite(L_IN1, HIGH); digitalWrite(L_IN2, HIGH);
-  digitalWrite(R_IN1, HIGH); digitalWrite(R_IN2, HIGH);
+  analogWrite(L_IN1, 255); analogWrite(L_IN2, 255);
+  analogWrite(R_IN1, 255); analogWrite(R_IN2, 255);
 }
 
 void setDrive(int leftCmd, int rightCmd) {
@@ -292,7 +300,7 @@ void setDrive(int leftCmd, int rightCmd) {
 }
 
 // ============================================================
-//  RGB LED  (shared)
+//     RGB LED  (shared)
 // ============================================================
 void rgbOff()                              { neopixelWrite(RGB_LED, 0, 0, 0); }
 void setRGB(uint8_t r, uint8_t g, uint8_t b) { neopixelWrite(RGB_LED, r, g, b); }
@@ -300,14 +308,14 @@ void setRGB(uint8_t r, uint8_t g, uint8_t b) { neopixelWrite(RGB_LED, r, g, b); 
 void updateRGB() {
   int ls = leftPos  - 90;
   int rs = rightPos - 90;
-  if      (ls > 15 && rs > 15)   setRGB(0, 255, 0);    // forward  → green
-  else if (ls < -15 && rs < -15) setRGB(255, 0, 0);    // reverse  → red
-  else if (abs(ls - rs) > 15)    setRGB(255, 0, 255);  // turning  → magenta
+  if      (ls > 15 && rs > 15)   setRGB(0, 255, 0);    // forward  -> green
+  else if (ls < -15 && rs < -15) setRGB(255, 0, 0);    // reverse  -> red
+  else if (abs(ls - rs) > 15)    setRGB(255, 0, 255);  // turning  -> magenta
   else                            rgbOff();
 }
 
 // ============================================================
-//  SETUP
+//     SETUP
 // ============================================================
 void setup() {
   Serial.begin(115200);
@@ -335,7 +343,7 @@ void setup() {
   Serial.println("\n=== AntBot-S3  |  N20 + DRV8833 + Weapon ===");
 
   // ----------------------------------------------------------
-  //  WiFi initialisation
+  //     WiFi initialisation
   // ----------------------------------------------------------
 #ifdef CONNECTION_WIFI
   Serial.println("[MODE] WiFi AP");
@@ -344,19 +352,20 @@ void setup() {
   Serial.print("  IP   : "); Serial.println(WiFi.softAPIP());
   Serial.println("  Pass : battle123");
 
-  server.on("/",         handleRoot);
-  server.on("/drive",    handleDrive);
-  server.on("/ping",     handlePing);
-  server.on("/activate", handleActivate);
-  server.on("/status",   handleStatus);
-  server.on("/stop",     handleStop);
+  server.on("/",            handleRoot);
+  server.on("/drive",       handleDrive);
+  server.on("/ping",        handlePing);
+  server.on("/activate",    handleActivate);
+  server.on("/status",      handleStatus);
+  server.on("/stop",        handleStop);
+  server.on("/deactivate",  handleDeactivate);  // FIX: new emergency-stop route
   server.begin();
 
   setRGB(0, 128, 255);   // cyan-ish = WiFi ready, waiting for browser
 #endif
 
   // ----------------------------------------------------------
-  //  BLE initialisation
+  //     BLE initialisation
   // ----------------------------------------------------------
 #ifdef CONNECTION_BLE
   Serial.println("[MODE] BLE");
@@ -369,14 +378,14 @@ void setup() {
 
   BLEService* pService = pServer->createService(BLE_SERVICE_UUID);
 
-  // Command characteristic — Android WRITES here
+  // Command characteristic -- Android WRITES here
   pCmdChar = pService->createCharacteristic(
                BLE_CMD_CHAR_UUID,
                BLECharacteristic::PROPERTY_WRITE |
                BLECharacteristic::PROPERTY_WRITE_NR);
   pCmdChar->setCallbacks(new CmdCallbacks());
 
-  // Response characteristic — Arduino NOTIFIES here
+  // Response characteristic -- Arduino NOTIFIES here
   pRspChar = pService->createCharacteristic(
                BLE_RSP_CHAR_UUID,
                BLECharacteristic::PROPERTY_NOTIFY);
@@ -388,14 +397,14 @@ void setup() {
   pAdv->addServiceUUID(BLE_SERVICE_UUID);
   pAdv->setScanResponse(true);
   BLEDevice::startAdvertising();
-  Serial.println("  Advertising — waiting for Android client...");
+  Serial.println("  Advertising -- waiting for Android client...");
 
   setRGB(128, 0, 255);   // purple = BLE advertising
 #endif
 }
 
 // ============================================================
-//  LOOP
+//     LOOP
 // ============================================================
 void loop() {
 
@@ -436,22 +445,41 @@ void loop() {
 }
 
 // ============================================================
-//  Wi-Fi HTTP HANDLERS
+//     Wi-Fi HTTP HANDLERS
 // ============================================================
 #ifdef CONNECTION_WIFI
 
+// FIX: PING is a connection keepalive only -- it does NOT reset
+// lastInputTime, so the failsafe correctly triggers when input stops.
 void handlePing() {
   if (!botActive) { server.send(200, "text/plain", "NOT_ACTIVE"); return; }
-  lastInputTime = millis();
   server.send(200, "text/plain", "PONG");
 }
 
+// Standard joystick-release stop: halts motors but keeps botActive=true
+// so the user can immediately drive again without re-activating.
 void handleStop() {
   stopMotors();
   weaponServo.write(90);
   leftPos = rightPos = weaponPos = 90;
   rgbOff();
   server.send(200, "text/plain", "STOPPED");
+}
+
+// FIX: Emergency stop (STOP ALL button).  Halts motors AND clears
+// botActive so any in-flight /drive requests that arrive after this
+// are rejected with NOT_ACTIVE -- the race condition that caused
+// "STOP ALL does nothing" is closed here.  The user must press
+// ACTIVATE again to resume, which is the correct behavior for an
+// emergency stop on a combat robot.
+void handleDeactivate() {
+  stopMotors();
+  weaponServo.write(90);
+  leftPos = rightPos = weaponPos = 90;
+  botActive = false;
+  rgbOff();
+  Serial.println("[WiFi] DEACTIVATED via emergency stop");
+  server.send(200, "text/plain", "DEACTIVATED");
 }
 
 void handleDrive() {
@@ -475,7 +503,7 @@ void handleDrive() {
 
   if (hasMotion) lastInputTime = millis();
 
-  Serial.printf("[WiFi] Drive → L:%d R:%d W:%d [%s] | EncL:%d EncR:%d\n",
+  Serial.printf("[WiFi] Drive -> L:%d R:%d W:%d [%s] | EncL:%d EncR:%d\n",
                 leftPos, rightPos, weaponPos,
                 hasMotion ? "MOTION" : "neutral",
                 (int)encoderLeft.getCount(),
@@ -558,6 +586,18 @@ void handleRoot() {
     "    const knob = document.getElementById('joyKnob');\n"
     "    const pingDot = document.getElementById('pingDot');\n"
     "\n"
+    // FIX: Shared helper that fully resets client state and shows the
+    // activate screen.  Called both from stopAll() and from the ping
+    // handler when the server returns NOT_ACTIVE (e.g. after a failsafe).
+    "    function showActivateScreen() {\n"
+    "      botActive = false;\n"
+    "      isDragging = false;\n"
+    "      currentX = currentY = 0;\n"
+    "      knob.style.transform = 'translate(-37.5px, -37.5px)';\n"
+    "      document.getElementById('controlScreen').classList.add('hidden');\n"
+    "      document.getElementById('activateScreen').classList.remove('hidden');\n"
+    "    }\n"
+    "\n"
     "    function activateBot() {\n"
     "      fetch('/activate').then(() => {\n"
     "        botActive = true;\n"
@@ -568,11 +608,7 @@ void handleRoot() {
     "    function sendPing() {\n"
     "      if (!botActive) return;\n"
     "      fetch('/ping').then(r => r.text()).then(t => {\n"
-    "        if (t === 'NOT_ACTIVE') {\n"
-    "          botActive = false;\n"
-    "          document.getElementById('controlScreen').classList.add('hidden');\n"
-    "          document.getElementById('activateScreen').classList.remove('hidden');\n"
-    "        }\n"
+    "        if (t === 'NOT_ACTIVE') { showActivateScreen(); return; }\n"
     "        pingDot.style.background = '#0f0';\n"
     "        setTimeout(() => pingDot.style.background = '#555', 200);\n"
     "      }).catch(() => { pingDot.style.background = '#f00'; });\n"
@@ -589,6 +625,11 @@ void handleRoot() {
     "      currentX = x / 115; currentY = -y / 115;\n"
     "      sendDrive();\n"
     "    }\n"
+    // FIX: resetKnob handles both touchend AND touchcancel.
+    // touchcancel fires when the OS interrupts the touch (e.g. incoming
+    // notification, palm rejection, second finger on some devices).
+    // Without it the isDragging flag could stay true silently, keeping
+    // the 45ms drive interval alive even after the finger is gone.
     "    function resetKnob() {\n"
     "      isDragging = false;\n"
     "      knob.style.transform = 'translate(-37.5px, -37.5px)';\n"
@@ -613,20 +654,25 @@ void handleRoot() {
     "      document.getElementById('weaponValue').innerText = weaponPos;\n"
     "      sendDrive();\n"
     "    }\n"
+    // FIX: stopAll() now calls /deactivate instead of /stop.
+    // /deactivate clears botActive on the server, so any /drive requests
+    // that are already in-flight when the button is pressed are rejected
+    // with NOT_ACTIVE rather than restarting the motors.  This closes the
+    // race condition that made STOP ALL appear to do nothing.
+    // The user must press ACTIVATE again -- correct for an emergency stop.
     "    function stopAll() {\n"
-    "      fetch('/stop');\n"
-    "      isDragging = false;\n"
-    "      knob.style.transform = 'translate(-37.5px, -37.5px)';\n"
-    "      currentX = currentY = 0;\n"
+    "      fetch('/deactivate');\n"
     "      weaponPos = 90;\n"
     "      document.getElementById('weaponSlider').value = 90;\n"
     "      document.getElementById('weaponValue').innerText = 90;\n"
+    "      showActivateScreen();\n"
     "    }\n"
     "    setInterval(() => { if (isDragging && botActive) sendDrive(); }, 45);\n"
     "    setInterval(sendPing, 500);\n"
-    "    base.addEventListener('touchstart', e => { e.preventDefault(); moveKnob(e.touches[0].clientX, e.touches[0].clientY); });\n"
-    "    base.addEventListener('touchmove',  e => { e.preventDefault(); moveKnob(e.touches[0].clientX, e.touches[0].clientY); });\n"
-    "    base.addEventListener('touchend',   resetKnob);\n"
+    "    base.addEventListener('touchstart',  e => { e.preventDefault(); moveKnob(e.touches[0].clientX, e.touches[0].clientY); });\n"
+    "    base.addEventListener('touchmove',   e => { e.preventDefault(); moveKnob(e.touches[0].clientX, e.touches[0].clientY); });\n"
+    "    base.addEventListener('touchend',    resetKnob);\n"
+    "    base.addEventListener('touchcancel', resetKnob);\n"  // FIX: handle OS-interrupted touches
     "    base.addEventListener('mousedown', e => {\n"
     "      const move = ev => moveKnob(ev.clientX, ev.clientY);\n"
     "      document.addEventListener('mousemove', move);\n"
