@@ -1,13 +1,15 @@
 NOTE: THIS PROJECT IS A WORK IN PROGRESS AS WE BUILD THESE IN REAL TIME WITH OUR YOUTH GROUP. 
 
-NOTE: THAT MEANS THIS ARE CHANGING AND THINGS WILL CHANGE
+NOTE: They have little coding experience, so code is heavily commented which may just be noise to you
+
+NOTE: THAT MEANS THINGS ARE CHANGING AND THINGS WILL CHANGE
 
 NOTE: USE AT YOUR OWN RISK
 
 This project is to create ant weight battle bots that use the following components and/or constraints:
 
 - ESP32 based (All wiring, etc. in this sketch is for ESP32-S3-WROOM-1, but will be testing with ESP32-S3-Zero (mini) )
-- N20 motors
+- N20 motors (with or without encoders, wiring diagrams below for either)
 - Wi-Fi and/or BLE based connectivity
 - 150g max (5.3oz)
 - Must fit within a 10cm (4 inch) cube
