@@ -37,8 +37,5 @@ Tips gleaned from forums, sites, and AI queries
 
 ----------------------------------------------------------------------------------------------
 
-<img width="1395" height="901" alt="image" src="https://github.com/user-attachments/assets/bd9f30ed-f1f8-42e5-9c2e-925ea8d83711" />
+<img width="1440" height="764" alt="image" src="https://github.com/user-attachments/assets/53ddb07d-1f58-4ff0-9578-2dfff5f7427f" />
 
-<img width="1388" height="591" alt="image" src="https://github.com/user-attachments/assets/d004ddd1-b398-4a3a-9696-512ce902f85b" />
-
-Arenas are 8x8 feet.  
