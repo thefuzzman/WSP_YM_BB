@@ -13,6 +13,9 @@
 
 // ================= END OF EDITABLE SEGMENT ================
 
+
+
+//  START OF ACTUAL CODE
 //    This is a baseline sketch only - it will be usable as-is, 
 //    however you'll likely need to modify to meet what you want
 //    out of the code
@@ -53,25 +56,46 @@
 // ==================== EDIT AS NEEDED =====================
 // Your ESP32-S3 may have different pinouts than what I use
 // Make sure that you verify the below pins and your board
+// NOTE: ESP32Encoder encoderLeft/Right is only used if your
+//       N20 motors have attached encoders
 // =========================================================
 // ================== PINS ==================
 const int WEAPON_SERVO_PIN = 6;
 
-const int L_IN1 = 8;
-const int L_IN2 = 15;
-const int R_IN1 = 16;
-const int R_IN2 = 17;
+// NOTE: If you find your motors not turning in the intended
+//       direction, you may need to switch the pins 
+//       (i.e., LIN1 and LIN2 pins 7 and 8)
+const int L_IN1 = 7;
+const int L_IN2 = 8;
+const int R_IN1 = 10;
+const int R_IN2 = 9;
 
 ESP32Encoder encoderLeft;
 ESP32Encoder encoderRight;
-const int ENC_L_A = 18;
-const int ENC_L_B = 22;
-const int ENC_R_A = 19;
-const int ENC_R_B = 21;
+const int ENC_L_A = 11;
+const int ENC_L_B = 12;
+const int ENC_R_A = 13;
+const int ENC_R_B = 16;
 
 // ================= END OF EDITABLE SEGMENT ================
 
 #define RGB_LED 48
+
+// ============================================================
+//  MOTOR PWM SETTINGS
+//  Using explicit ledcAttach/ledcWrite instead of analogWrite
+//  to avoid LEDC channel conflicts with ESP32Servo.
+//
+//  NOTE: This uses the Arduino-ESP32 core 3.x API.
+//  If you are on core 2.x, replace the ledcAttach() calls in
+//  setup() with:
+//      ledcSetup(channel, PWM_FREQ, PWM_RES);
+//      ledcAttachPin(pin, channel);
+//  And replace ledcWrite(pin, duty) with ledcWrite(channel, duty).
+//  Channel assignments for 2.x: L_IN1=1, L_IN2=2, R_IN1=3, R_IN2=4
+// ============================================================
+#define PWM_FREQ  20000   // 20 kHz — inaudible, good for N20 motors
+#define PWM_RES   8       // 8-bit resolution → duty values 0-255
 
 // ================== SHARED STATE ==================
 
@@ -270,24 +294,31 @@ void updateRGB();
 
 // ============================================================
 //     MOTOR CONTROL  (shared)
+//
+//  FIX: Replaced analogWrite() with ledcWrite() throughout.
+//  analogWrite() on ESP32 uses LEDC internally and grabs channels
+//  without checking what ESP32Servo already claimed, causing one
+//  or both motors to be silently dead.  ledcAttach() in setup()
+//  locks the motor pins to LEDC before the servo library runs,
+//  preventing the conflict entirely.
 // ============================================================
 void driveMotor(int in1, int in2, int speed) {
   speed = constrain(speed, -255, 255);
   if (speed == 0) {
-    analogWrite(in1, 255);
-    analogWrite(in2, 255);
+    ledcWrite(in1, 255);   // both high = brake on DRV8833
+    ledcWrite(in2, 255);
   } else if (speed > 0) {
-    analogWrite(in1, 0);
-    analogWrite(in2, speed);
+    ledcWrite(in1, 0);
+    ledcWrite(in2, speed);
   } else {
-    analogWrite(in1, -speed);
-    analogWrite(in2, 0);
+    ledcWrite(in1, -speed);
+    ledcWrite(in2, 0);
   }
 }
 
 void stopMotors() {
-  analogWrite(L_IN1, 255); analogWrite(L_IN2, 255);
-  analogWrite(R_IN1, 255); analogWrite(R_IN2, 255);
+  ledcWrite(L_IN1, 255); ledcWrite(L_IN2, 255);
+  ledcWrite(R_IN1, 255); ledcWrite(R_IN2, 255);
 }
 
 void setDrive(int leftCmd, int rightCmd) {
@@ -321,9 +352,15 @@ void setup() {
   Serial.begin(115200);
   delay(200);
 
-  // Motor pins
-  pinMode(L_IN1, OUTPUT); pinMode(L_IN2, OUTPUT);
-  pinMode(R_IN1, OUTPUT); pinMode(R_IN2, OUTPUT);
+  // ---- Motor LEDC setup ----
+  // FIX: Call ledcAttach() for all four motor pins BEFORE
+  // weaponServo.attach() runs.  This claims the LEDC channels
+  // first so the servo library cannot collide with them.
+  // (Arduino-ESP32 core 3.x API — see note at top if on 2.x)
+  ledcAttach(L_IN1, PWM_FREQ, PWM_RES);
+  ledcAttach(L_IN2, PWM_FREQ, PWM_RES);
+  ledcAttach(R_IN1, PWM_FREQ, PWM_RES);
+  ledcAttach(R_IN2, PWM_FREQ, PWM_RES);
   stopMotors();
 
   // Encoders
@@ -332,7 +369,7 @@ void setup() {
   encoderLeft.clearCount();
   encoderRight.clearCount();
 
-  // Weapon servo
+  // Weapon servo — attached AFTER motor pins are claimed
   weaponServo.attach(WEAPON_SERVO_PIN, 500, 2400);
   weaponServo.write(90);
 
@@ -655,7 +692,7 @@ void handleRoot() {
     "    base.addEventListener('touchstart',  e => { e.preventDefault(); moveKnob(e.touches[0].clientX, e.touches[0].clientY); });\n"
     "    base.addEventListener('touchmove',   e => { e.preventDefault(); moveKnob(e.touches[0].clientX, e.touches[0].clientY); });\n"
     "    base.addEventListener('touchend',    resetKnob);\n"
-    "    base.addEventListener('touchcancel', resetKnob);\n"  // FIX: handle OS-interrupted touches
+    "    base.addEventListener('touchcancel', resetKnob);\n"
     "    base.addEventListener('mousedown', e => {\n"
     "      const move = ev => moveKnob(ev.clientX, ev.clientY);\n"
     "      document.addEventListener('mousemove', move);\n"
