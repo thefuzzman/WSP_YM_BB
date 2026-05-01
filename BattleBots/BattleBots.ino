@@ -19,7 +19,6 @@
 //    This is a baseline sketch only - it will be usable as-is, 
 //    however you'll likely need to modify to meet what you want
 //    out of the code
-
 //    Have fun! - Adam
 
 // ============================================================
@@ -100,7 +99,7 @@ const int ENC_R_B = 16;
 // -------------------------------------------------------------------
 // Pin 48 on the ESP32-S3 DevKit has a built-in RGB "NeoPixel" LED.
 // We use it as a status light — different colors = different states.
-// #define RGB_LED 48
+ #define RGB_LED 21
 
 // ============================================================
 //  MOTOR PWM SETTINGS
