@@ -9,7 +9,7 @@ NOTE: USE AT YOUR OWN RISK
 This project is to create ant weight battle bots that use the following components and/or constraints:
 
 - ESP32 based (All wiring, etc. in this sketch is for ESP32-S3-WROOM-1, but will be testing with ESP32-S3-Zero (mini) )
-- N20 motors (with or without encoders, wiring diagrams below for either)
+- N20 motors (with or without encoders, wiring diagrams below for either) -> 2 powered wheels for motion, but 4 wheels or tracks allowed with the 2 drives.
 - Wi-Fi and/or BLE based connectivity
 - 150g max (5.3oz)
 - Must fit within a 10cm (4 inch) cube
@@ -23,9 +23,12 @@ This project is to create ant weight battle bots that use the following componen
 ----------------------------------------------------------------------------------------------
 Components used for prototyping include
 
-- https://www.amazon.com/dp/B0CR2RH7PS?ref=ppx_yo2ov_dt_b_fed_asin_title (ESP32-S3 mini)
-- https://www.amazon.com/dp/B0F8NH1M4Z?ref=ppx_yo2ov_dt_b_fed_asin_title (N20 motors)
-- https://www.amazon.com/dp/B0DB8CX8LK?ref=ppx_yo2ov_dt_b_fed_asin_title (DRV8833 (Dual H Bridge)
+- https://www.amazon.com/dp/B0CR2RH7PS (ESP32-S3 mini)
+- https://www.amazon.com/dp/B0F8NH1M4Z (N20 motors - 6 V 100 rpm)
+- https://www.amazon.com/dp/B0DB8CX8LK (DRV8833 (Dual H Bridge)
+- https://www.amazon.com/gp/product/B0D3F5YF9L (7.2 V battery)
+- https://www.amazon.com/gp/product/B089GV88DK (MP1584en 3V regulator for ESP)
+- https://www.amazon.com/gp/product/B09R43HCY3/ (power switch for safety shutoff)
   
 ----------------------------------------------------------------------------------------------
 Tips gleaned from forums, sites, and AI queries
