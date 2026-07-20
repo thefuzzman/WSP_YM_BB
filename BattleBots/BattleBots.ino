@@ -47,8 +47,8 @@
 //   instead of a position. This is the mode you'd use with
 //   something like a slim 15A 2S brushless ESC.
 // ============================================================
-#define WEAPON_SERVO
-// #define WEAPON_ESC
+// #define WEAPON_SERVO
+#define WEAPON_ESC
 
 // These are "libraries" — pre-written code that saves us from
 // having to reinvent the wheel. #include pulls them into our sketch.
@@ -120,17 +120,49 @@ const int R_IN2 = 9;
 // "unsigned long" is just a non-negative integer big enough to hold
 // the value of millis() (milliseconds since boot) without overflowing.
 
-// How long with no input before we kill the motors automatically.
-// 750ms is plenty of time for normal Wi-Fi latency but stops the
-// bot quickly if your phone drops off the network or the browser closes.
-const unsigned long FAILSAFE_TIMEOUT = 750;
+// How long with no control frame before we kill everything automatically.
+// The browser sends a frame every 100ms, so this is ~12 missed frames.
+// Don't set this too tight: each frame is a full HTTP request/response over
+// softAP, and round trips of 100-200ms are normal under load. A timeout
+// shorter than a few round trips will trip on latency rather than on an
+// actual lost link, which shows up as the bot disarming itself constantly.
+const unsigned long FAILSAFE_TIMEOUT = 1200;
 
 bool botActive = false;          // is the bot allowed to move right now?
-unsigned long lastInputTime = 0; // timestamp of the last real control input
+
+// stopLatched is the important one. When true, the bot has been HARD STOPPED
+// and will refuse every drive/throttle input until someone explicitly hits
+// ACTIVATE again. Nothing in the code clears this except handleActivate() /
+// the BLE "ACTIVATE" command. A dropped packet, a stale in-flight request, or
+// a browser that didn't get the memo cannot un-latch it.
+bool stopLatched = true;         // boot up latched — nothing moves until armed
+
+unsigned long lastInputTime = 0; // timestamp of the last control frame
+
+// WEAPON_IDLE is the commanded value that means "weapon is doing nothing".
+// It differs by weapon type, which is exactly the kind of detail that caused
+// the original "ESC won't stop" bug — so it lives in ONE place now.
+#ifdef WEAPON_SERVO
+const int WEAPON_IDLE = 90;      // servo: 90 = centered
+#endif
+#ifdef WEAPON_ESC
+const int WEAPON_IDLE = 0;       // ESC: 0 = zero throttle (see note below)
+#endif
 
 // These track the current commanded position for each axis.
-// 90 = center/neutral for servo-style values (0=full reverse, 180=full forward)
-int leftPos = 90, rightPos = 90, weaponPos = 90;
+// 90 = center/neutral for the DRIVE values (0=full reverse, 180=full forward)
+int leftPos = 90, rightPos = 90;
+int weaponPos = WEAPON_IDLE;
+
+// The last pulse width actually written to the weapon output, in microseconds.
+// Reported back to the browser and the serial monitor so you can see what the
+// hardware is really being told, rather than inferring it from the UI.
+volatile int lastWeaponUs = 1000;
+
+// Set only by the serial BENCH command below. While true, the normal
+// "assert idle whenever disarmed" enforcement in loop() stands down so the
+// test can drive the output directly. Always returns to false on its own.
+bool benchActive = false;
 
 #ifdef WEAPON_SERVO
 Servo weaponServo; // object that manages the weapon servo for us
@@ -150,6 +182,11 @@ Servo weaponESC; // ESP32Servo's Servo object also works fine for ESCs —
 // There is no meaningful "1500us = stopped" here — 1500us is roughly
 // HALF throttle. Always treat ESC_MIN_US as both "off" and "arm here".
 // Check your ESC's manual if it behaves oddly.
+//
+// The weapon command on the wire is 0-180 for both weapon types, but for
+// the ESC that whole span is throttle: 0 = off, 180 = full. (The old code
+// threw away the bottom half of the range and used 90 as "off", which meant
+// the UI's resting value and the throttle scale disagreed with each other.)
 const int ESC_MIN_US = 1000;
 const int ESC_MAX_US = 2000;
 #endif
@@ -182,6 +219,22 @@ void handleDeactivate();
 #endif
 
 // ============================================================
+// Forward declarations (shared functions used by both modes).
+// These must appear BEFORE the BLE callback classes below, because
+// those classes call them.
+// ============================================================
+void driveMotor(int in1, int in2, int speed);
+void stopMotors();
+void setDrive(int leftCmd, int rightCmd);
+void setWeapon(int pos);
+void forceWeaponIdle();
+void killOutputs();
+void engageStop(const char* reason);
+void rgbOff();
+void setRGB(uint8_t r, uint8_t g, uint8_t b);
+void updateRGB();
+
+// ============================================================
 // BLE-only globals
 // Everything in this block is ignored if you're using Wi-Fi.
 // ============================================================
@@ -200,11 +253,15 @@ bool bleConnected = false;             // is a phone currently connected?
 
 // ---- BLE Command Reference ----
 // Android WRITES these strings to BLE_CMD_CHAR_UUID:
-//   "ACTIVATE"        -> arm the bot (enables drive commands)
-//   "STOP"            -> stop motors + weapon, stay armed
-//   "PING"             -> keepalive heartbeat (does NOT reset failsafe timer)
-//   "D,LLL,RRR,WWW"   -> drive command, e.g. "D,090,135,090"
-//                        LLL/RRR/WWW are 0-180 servo-style integers
+//   "ACTIVATE"        -> arm the bot at zero throttle (clears the stop latch)
+//   "STOP" / "ABORT"  -> kill motors + weapon and LATCH OFF.
+//                        Nothing moves again until ACTIVATE is sent.
+//   "PING"            -> keepalive heartbeat (does NOT reset failsafe timer)
+//   "D,LLL,RRR,WWW"   -> drive frame, e.g. "D,090,135,000"
+//                        LLL/RRR are 0-180 (90 = stop).
+//                        WWW is 0-180 weapon: for an ESC 0 = off, 180 = full.
+//                        Send one at least every 750ms while armed, even if
+//                        everything is zero — that IS the heartbeat.
 //
 // Bot NOTIFIES on BLE_RSP_CHAR_UUID with these strings:
 //   "ACTIVATED"       -> confirmed armed
@@ -233,11 +290,8 @@ class BotServerCallbacks : public BLEServerCallbacks {
   }
   void onDisconnect(BLEServer* s) override {
     bleConnected = false;
-    botActive = false;
     Serial.println("[BLE] Client disconnected -- failsafe");
-    stopMotors();
-    setWeapon(90); // center/retract the weapon
-    rgbOff();
+    engageStop("BLE client disconnected");
     // Restart advertising so a new phone can find and connect to the bot
     BLEDevice::startAdvertising();
   }
@@ -253,9 +307,13 @@ class CmdCallbacks : public BLECharacteristicCallbacks {
     Serial.print("[BLE] CMD: "); Serial.println(cmd);
 
     // ---- ACTIVATE ----
+    // The only thing that clears the stop latch. Arms at zero throttle.
     if (cmd == "ACTIVATE") {
+      killOutputs();
+      stopLatched = false;
       botActive = true;
       lastInputTime = millis(); // start the failsafe clock
+      setWeapon(WEAPON_IDLE);
       setRGB(0, 255, 0);        // green = ready to drive
       bleSend("ACTIVATED");
       return; // "return" exits the function early — no need to check the rest
@@ -263,26 +321,28 @@ class CmdCallbacks : public BLECharacteristicCallbacks {
 
     // ---- PING ----
     // PING is just "are you still there?" — it does NOT reset the failsafe
-    // timer. Only actual drive commands with real motion do that.
+    // timer. Only actual drive frames do that.
     if (cmd == "PING") {
-      if (!botActive) { bleSend("NOT_ACTIVE"); return; }
+      if (!botActive || stopLatched) { bleSend("NOT_ACTIVE"); return; }
       bleSend("PONG");
       return;
     }
 
-    // ---- STOP ----
-    if (cmd == "STOP") {
-      stopMotors();
-      setWeapon(90);
-      leftPos = rightPos = weaponPos = 90; // reset all positions to neutral
-      rgbOff();
+    // ---- STOP / ABORT ----
+    // Kills the hardware first, then latches out all further input.
+    if (cmd == "STOP" || cmd == "ABORT") {
+      engageStop("BLE stop/abort");
       bleSend("STOPPED");
       return;
     }
 
     // ---- DRIVE "D,LLL,RRR,WWW" ----
     if (cmd.startsWith("D,")) {
-      if (!botActive) { bleSend("NOT_ACTIVE"); return; }
+      if (!botActive || stopLatched) {
+        killOutputs();
+        bleSend("NOT_ACTIVE");
+        return;
+      }
       // Parse the three numbers out of the comma-separated string.
       // indexOf(',', 2) searches for a comma starting at character index 2,
       // skipping the "D," prefix we already know is there.
@@ -300,10 +360,6 @@ class CmdCallbacks : public BLECharacteristicCallbacks {
 
       // Only reset the failsafe timer if there's actual meaningful motion.
       // "5" is a small deadzone — tiny joystick drift shouldn't count.
-      bool hasMotion = (abs(newLeft - 90) > 5) ||
-                       (abs(newRight - 90) > 5) ||
-                       (abs(newWeapon - 90) > 5);
-
       leftPos = newLeft;
       rightPos = newRight;
       weaponPos = newWeapon;
@@ -312,11 +368,11 @@ class CmdCallbacks : public BLECharacteristicCallbacks {
       setWeapon(weaponPos);
       updateRGB();
 
-      if (hasMotion) lastInputTime = millis();
+      // Every frame refreshes the failsafe clock, including all-zero frames.
+      // The app must send a frame at least every 750ms while armed — a
+      // heartbeat that only beats when something is moving is not a heartbeat.
+      lastInputTime = millis();
 
-      Serial.printf("[BLE] Drive -> L:%d R:%d W:%d [%s]\n",
-                    leftPos, rightPos, weaponPos,
-                    hasMotion ? "MOTION" : "neutral");
       bleSend("OK");
       return;
     }
@@ -334,15 +390,9 @@ class CmdCallbacks : public BLECharacteristicCallbacks {
 #endif // CONNECTION_BLE
 
 // ============================================================
-// Forward declarations (shared functions used by both modes)
+// (Shared forward declarations now live above the BLE section,
+//  since the BLE callback classes call these functions.)
 // ============================================================
-void driveMotor(int in1, int in2, int speed);
-void stopMotors();
-void setDrive(int leftCmd, int rightCmd);
-void setWeapon(int pos);
-void rgbOff();
-void setRGB(uint8_t r, uint8_t g, uint8_t b);
-void updateRGB();
 
 // ============================================================
 // MOTOR CONTROL (shared by both Wi-Fi and BLE)
@@ -405,24 +455,73 @@ void setDrive(int leftCmd, int rightCmd) {
 void setWeapon(int pos) {
   pos = constrain(pos, 0, 180);
 
+  // HARD GATE. Nothing gets to command the weapon while the bot is stopped
+  // or disarmed — not a stale HTTP request that was already in flight when
+  // STOP was pressed, not a retransmit, not a bug somewhere else in the
+  // sketch. If we're not armed, the only value that reaches the hardware
+  // is idle. This single check is what makes STOP actually mean stop.
+  if (!botActive || stopLatched) pos = WEAPON_IDLE;
+
 #ifdef WEAPON_SERVO
   weaponServo.write(pos);
+  lastWeaponUs = map(pos, 0, 180, 500, 2400);
 #endif
 
 #ifdef WEAPON_ESC
-  // This ESC has no reverse/neutral — it only spins one way. So we
-  // treat the BOTTOM half of the slider (0-90) as "off" and only the
-  // TOP half (90-180) as real throttle. That way the slider's resting
-  // position (90, same as STOP/failsafe/activate-on-boot) always means
-  // "not spinning" instead of accidentally landing at half speed.
-  int us;
-  if (pos <= 90) {
-    us = ESC_MIN_US; // anywhere at or below center = fully off
-  } else {
-    us = map(pos, 90, 180, ESC_MIN_US, ESC_MAX_US); // 90-180 -> 1000-2000us
-  }
+  // Straight linear throttle across the whole 0-180 command range.
+  //   0   -> 1000us (off)
+  //   180 -> 2000us (full)
+  int us = map(pos, 0, 180, ESC_MIN_US, ESC_MAX_US);
   weaponESC.writeMicroseconds(us);
+  lastWeaponUs = us;
 #endif
+}
+
+// ============================================================
+// SAFETY PRIMITIVES
+//
+// forceWeaponIdle() bypasses nothing and asks no questions — it writes the
+// physical "off" signal to the weapon hardware directly. setWeapon() can be
+// reasoned about; this one is the blunt instrument.
+// ============================================================
+void forceWeaponIdle() {
+#ifdef WEAPON_SERVO
+  weaponServo.write(WEAPON_IDLE);
+  lastWeaponUs = 1500;
+#endif
+#ifdef WEAPON_ESC
+  weaponESC.writeMicroseconds(ESC_MIN_US);
+  lastWeaponUs = ESC_MIN_US;
+#endif
+}
+
+// killOutputs() puts every actuator into its safe state RIGHT NOW.
+// It does not touch the arm/latch flags — it is purely "make the hardware stop".
+void killOutputs() {
+  forceWeaponIdle();  // weapon first: it's the dangerous one
+  stopMotors();
+  leftPos = rightPos = 90;
+  weaponPos = WEAPON_IDLE;
+}
+
+// engageStop() is THE emergency stop. The ordering here is deliberate and is
+// what you asked for:
+//   1. kill the hardware
+//   2. only then flip the flags that lock out further input
+// Because the web server handlers and loop() all run on the same thread,
+// nothing can sneak a command in between those two steps.
+void engageStop(const char* reason) {
+  killOutputs();      // (1) signal out to the motors and ESC
+
+  botActive = false;  // (2) lock out all further input until re-activation
+  stopLatched = true;
+
+  forceWeaponIdle();  // and once more now that the gate is closed
+  stopMotors();
+
+  setRGB(255, 0, 0);  // solid red = latched stop, needs re-activation
+  Serial.print("[STOP] Latched. Reason: ");
+  Serial.println(reason);
 }
 
 // ============================================================
@@ -472,7 +571,7 @@ void setup() {
   // Attach the weapon servo AFTER we've claimed the motor pins.
   // 500–2400 microseconds is the pulse width range for most hobby servos.
   weaponServo.attach(WEAPON_PIN, 500, 2400);
-  weaponServo.write(90); // center / safe position on boot
+  weaponServo.write(WEAPON_IDLE); // center / safe position on boot
 #endif
 
 #ifdef WEAPON_ESC
@@ -497,8 +596,15 @@ void setup() {
   weaponESC.attach(WEAPON_PIN, ESC_MIN_US, ESC_MAX_US);
   weaponESC.writeMicroseconds(ESC_MIN_US);
   Serial.println("[ESC] Arming weapon ESC -- keep clear of the weapon!");
-  delay(3000); // give the ESC time to beep through startup and arm
-  Serial.println("[ESC] Weapon ESC armed.");
+  // Hold zero throttle continuously for the whole arming window rather than
+  // writing it once and sleeping. Same idea as the loop() enforcement:
+  // never assume a single pulse landed.
+  for (int i = 0; i < 60; i++) {
+    weaponESC.writeMicroseconds(ESC_MIN_US);
+    delay(50);
+  }
+  Serial.println("[ESC] Weapon ESC armed at zero throttle.");
+  Serial.println("[ESC] Bot is STOP-LATCHED. Press ACTIVATE to enable controls.");
 #endif
 
   // Configure the RGB LED pin and make sure it's off
@@ -525,8 +631,8 @@ void setup() {
   server.on("/ping", handlePing);         // keepalive check
   server.on("/activate", handleActivate); // arm the bot
   server.on("/status", handleStatus);     // JSON status query
-  server.on("/stop", handleStop);         // stop motors, stay armed
-  server.on("/deactivate", handleDeactivate); // emergency stop + disarm
+  server.on("/stop", handleStop);         // emergency stop (latches off)
+  server.on("/deactivate", handleDeactivate); // emergency stop + disarm (latches off)
   server.begin();
 
   setRGB(0, 128, 255); // cyan = Wi-Fi is up, waiting for a browser to connect
@@ -592,23 +698,69 @@ void loop() {
 #endif
 
   // ---- Failsafe check ----
-  // If the bot is armed but we haven't received real input in a while,
+  // If the bot is armed but we haven't received a control frame in a while,
   // cut power immediately. This handles phone battery death, dropped
-  // Wi-Fi, browser tab crashes, etc.
+  // Wi-Fi, browser tab crashes, etc. The browser now sends a frame every
+  // 50ms whenever it is armed, so silence for 750ms genuinely means the
+  // link is gone — not just "the driver isn't touching anything".
   if (botActive && (millis() - lastInputTime > FAILSAFE_TIMEOUT)) {
     Serial.println("!!! FAILSAFE TRIGGERED !!!");
-    stopMotors();
-    setWeapon(90); // retract/center/idle the weapon
-    weaponPos = 90;
-    leftPos = rightPos = 90;
-    rgbOff();
-    botActive = false; // require re-activation before moving again
+    engageStop("failsafe timeout");
 #ifdef CONNECTION_BLE
     bleSend("FAILSAFE"); // tell the app what happened
 #endif
   }
 
-  // ---- Periodic status heartbeat ----
+  // ---- Continuous safe-state enforcement ----
+  // While we are not armed, we don't just assume the last "off" write stuck.
+  // We keep re-asserting zero throttle at 20Hz for as long as the bot is
+  // disarmed. If the ESC ever misses or misreads a pulse, the next one is
+  // 50ms away. A one-shot write is a hope; this is a guarantee.
+  if ((!botActive || stopLatched) && !benchActive) {
+    static unsigned long lastAssert = 0;
+    if (millis() - lastAssert >= 50) {
+      lastAssert = millis();
+      forceWeaponIdle();
+      stopMotors();
+    }
+  }
+
+  // ---- Serial bench test ----
+  // Type BENCH into the Serial Monitor (115200, newline ending) to ramp the
+  // weapon output without any browser involved. This tells you in one step
+  // whether a "weapon won't spin" problem is in the ESC/wiring/battery or in
+  // the web UI. It ramps to 25% only, and any further serial input aborts it.
+  //
+  // REMOVE THE WEAPON BLADE/DRUM BEFORE RUNNING THIS.
+  if (Serial.available()) {
+    String c = Serial.readStringUntil('\n');
+    c.trim();
+    if (c == "BENCH") {
+#ifdef WEAPON_ESC
+      Serial.println("[BENCH] Weapon removed? Ramping to 25% in 3s...");
+      delay(3000);
+      benchActive = true;
+      for (int us = ESC_MIN_US; us <= ESC_MIN_US + 250; us += 5) {
+        weaponESC.writeMicroseconds(us);
+        lastWeaponUs = us;
+        Serial.printf("[BENCH] %d us\n", us);
+        delay(100);
+        if (Serial.available()) break; // any keypress aborts
+      }
+      delay(1500);
+      weaponESC.writeMicroseconds(ESC_MIN_US);
+      lastWeaponUs = ESC_MIN_US;
+      benchActive = false;
+      Serial.println("[BENCH] Done, throttle back to zero.");
+#else
+      Serial.println("[BENCH] Only available in WEAPON_ESC mode.");
+#endif
+    } else if (c == "STOP") {
+      engageStop("serial STOP command");
+    }
+  }
+
+
   // "static" means this variable persists between calls to loop() —
   // it's not reset to 0 every time like a normal local variable would be.
   static unsigned long lastPrint = 0;
@@ -616,8 +768,10 @@ void loop() {
   // Print a quick status line every 500ms — useful for debugging
   // but not so frequent that it floods the serial monitor.
   if (millis() - lastPrint > 500) {
-    Serial.printf("Active:%s L:%d R:%d W:%d\n",
-                  botActive ? "YES" : "NO", leftPos, rightPos, weaponPos);
+    Serial.printf("Active:%s Latched:%s L:%d R:%d W:%d (%dus)\n",
+                  botActive ? "YES" : "NO",
+                  stopLatched ? "YES" : "no",
+                  leftPos, rightPos, weaponPos, lastWeaponUs);
     lastPrint = millis();
   }
 }
@@ -634,30 +788,23 @@ void loop() {
 // We respond but do NOT reset the failsafe timer here.
 // Only actual drive inputs with real motion reset that clock.
 void handlePing() {
-  if (!botActive) { server.send(200, "text/plain", "NOT_ACTIVE"); return; }
+  if (!botActive || stopLatched) { server.send(200, "text/plain", "NOT_ACTIVE"); return; }
   server.send(200, "text/plain", "PONG");
 }
 
-// /stop — joystick released. Halts motors but keeps the bot armed
-// so the driver can immediately move again without re-activating.
+// /stop — full emergency stop. Both this and /deactivate latch the bot off.
+// There is deliberately no longer a "soft stop that stays armed": you asked
+// for STOP to mean STOP, so every stop path goes through engageStop().
 void handleStop() {
-  stopMotors();
-  setWeapon(90);
-  leftPos = rightPos = weaponPos = 90;
-  rgbOff();
+  engageStop("/stop requested");
   server.send(200, "text/plain", "STOPPED");
 }
 
-// /deactivate — the "STOP ALL" button. Halts motors AND disarms
-// the bot. Any in-flight /drive requests that arrive after this
-// will be rejected with NOT_ACTIVE.
+// /deactivate — the "STOP ALL" / abort button. Identical behaviour to /stop.
+// Any /drive requests that were already in flight when this landed are
+// rejected on arrival, and setWeapon() would clamp them to idle anyway.
 void handleDeactivate() {
-  stopMotors();
-  setWeapon(90);
-  leftPos = rightPos = weaponPos = 90;
-  botActive = false; // require ACTIVATE before driving again
-  rgbOff();
-  Serial.println("[WiFi] DEACTIVATED via emergency stop");
+  engageStop("/deactivate emergency stop");
   server.send(200, "text/plain", "DEACTIVATED");
 }
 
@@ -665,18 +812,20 @@ void handleDeactivate() {
 // The browser sends this URL with query parameters every ~40ms while
 // the joystick is being held. We parse the values and move the bot.
 void handleDrive() {
-  if (!botActive) { server.send(200, "text/plain", "NOT_ACTIVE"); return; }
+  // Not armed? Reject, and re-assert the safe state while we're here.
+  // We never trust that a previous stop "took" — every rejected frame is
+  // another opportunity to push zero throttle at the ESC.
+  if (!botActive || stopLatched) {
+    killOutputs();
+    server.send(200, "text/plain", "NOT_ACTIVE");
+    return;
+  }
 
   // server.hasArg() checks if a query parameter exists in the URL.
-  // If it's missing, we keep the current value instead of defaulting to 90.
+  // If it's missing, we keep the current value instead of defaulting.
   int newLeft = server.hasArg("left") ? constrain(server.arg("left").toInt(), 0, 180) : leftPos;
   int newRight = server.hasArg("right") ? constrain(server.arg("right").toInt(), 0, 180) : rightPos;
   int newWeapon = server.hasArg("weapon") ? constrain(server.arg("weapon").toInt(), 0, 180) : weaponPos;
-
-  // Deadzone check — small values near 90 are joystick noise, not real input
-  bool hasMotion = (abs(newLeft - 90) > 5) ||
-                   (abs(newRight - 90) > 5) ||
-                   (abs(newWeapon - 90) > 5);
 
   leftPos = newLeft;
   rightPos = newRight;
@@ -686,31 +835,37 @@ void handleDrive() {
   setWeapon(weaponPos);
   updateRGB();
 
-  // Only real motion resets the failsafe timer
-  if (hasMotion) lastInputTime = millis();
+  // THE KEY FIX: every frame we receive refreshes the failsafe clock,
+  // including frames that command zero everything. The old code only
+  // refreshed the timer when there was "motion", and the browser only
+  // bothered sending a frame when there was "motion" — so a command that
+  // said "weapon off, motors off" was never sent and never arrived, and
+  // the ESC just kept spinning at whatever it was last told.
+  // A heartbeat that only beats when something is moving is not a heartbeat.
+  lastInputTime = millis();
 
-  Serial.printf("[WiFi] Drive -> L:%d R:%d W:%d [%s]\n",
-                leftPos, rightPos, weaponPos,
-                hasMotion ? "MOTION" : "neutral");
-
-  server.send(200, "text/plain", "OK");
+  server.send(200, "text/plain", String("OK,") + String(lastWeaponUs));
 }
 
-// /activate — arms the bot so drive commands are accepted.
-// Having a separate activation step prevents accidental movement
-// just from loading the page.
+// /activate — the ONLY thing in the entire sketch that clears stopLatched.
+// We deliberately arm into a known-idle state: motors braked, throttle at
+// zero. Whatever the slider happened to be showing is irrelevant — you can
+// never re-activate straight into a spinning weapon.
 void handleActivate() {
+  killOutputs();          // start from zero, always
+  stopLatched = false;
   botActive = true;
   lastInputTime = millis();
-  Serial.println("[WiFi] Bot ACTIVATED");
+  setWeapon(WEAPON_IDLE); // now that the gate is open, explicitly write idle
+  Serial.println("[WiFi] Bot ACTIVATED (armed at zero throttle)");
   setRGB(0, 255, 0); // green = armed and ready
   server.send(200, "text/plain", "ACTIVATED");
 }
 
 // /status — returns a JSON object the browser can parse.
-// Useful for the UI to check whether the bot thinks it's still armed.
 void handleStatus() {
-  String json = "{\"active\":" + String(botActive ? "true" : "false") + "}";
+  String json = String("{\"active\":") + (botActive ? "true" : "false") +
+                ",\"latched\":" + (stopLatched ? "true" : "false") + "}";
   server.send(200, "application/json", json);
 }
 
@@ -723,6 +878,17 @@ void handleStatus() {
 // it far, far more elegant and usable than I.
 // Do what you want with it! — Adam
 void handleRoot() {
+  // The weapon slider's range depends on the weapon type. For an ESC the
+  // whole 0-180 span is throttle and it rests at 0. For a servo it's a
+  // position and it rests centered at 90.
+#ifdef WEAPON_ESC
+  const char* wIdle = "0";
+  const char* wLabel = "WEAPON THROTTLE";
+#else
+  const char* wIdle = "90";
+  const char* wLabel = "WEAPON";
+#endif
+
   String html =
     "<!DOCTYPE html>\n"
     "<html>\n"
@@ -735,28 +901,44 @@ void handleRoot() {
     "    h1 { text-align:center; margin:10px 0 5px; font-size:1.6em; }\n"
     "    .activate-screen, .control-screen { position:absolute; top:0; left:0; width:100%; height:100%; display:flex; flex-direction:column; justify-content:center; align-items:center; }\n"
     "    .activate-btn { padding:30px 60px; font-size:2em; background:#0f0; color:#000; border:none; border-radius:20px; font-weight:bold; }\n"
-    "    .stop-btn { position:fixed; top:15px; right:15px; padding:12px 28px; background:#f00; color:white; border:none; border-radius:12px; font-size:1.2em; }\n"
+    // The STOP button is deliberately large and always on top of everything.
+    "    .stop-btn { position:fixed; top:15px; right:15px; padding:22px 40px; background:#f00; color:white; border:none; border-radius:12px; font-size:1.5em; font-weight:bold; z-index:9999; }\n"
     "    .container { display:flex; height:calc(100vh - 80px); width:100%; }\n"
     "    .left { flex:1; display:flex; justify-content:flex-start; align-items:center; padding-left:50px; }\n"
-    "    .right { flex:1; display:flex; justify-content:flex-end; align-items:center; padding-right:60px; background:#1a1a1a; }\n"
+    "    .right { flex:1; display:flex; flex-direction:column; justify-content:center; align-items:center; padding-right:60px; background:#1a1a1a; }\n"
     "    .joystick-base { width:230px; height:230px; background:rgba(255,255,255,0.08); border:7px solid #0f0; border-radius:50%; position:relative; }\n"
     "    .joystick-knob { width:75px; height:75px; background:#0f0; border-radius:50%; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); box-shadow:0 0 25px #0f0; }\n"
-    "    .weapon-label { font-size:1.5em; margin-bottom:20px; }\n"
-    "    .weapon-slider { width:70px; height:340px; accent-color:#ff0; }\n"
+    "    .weapon-label { font-size:1.5em; margin-bottom:20px; color:#ff0; }\n"
+    // Vertical sliders are a mess. The old `orient="vertical"` attribute is
+    // Firefox-only, and Chrome dropped `appearance: slider-vertical` in favour
+    // of `writing-mode`. Without one of these actually taking effect the
+    // control renders as a 70px-WIDE horizontal slider — technically draggable,
+    // practically useless, which is why the throttle wouldn't move. All three
+    // declarations are here so at least one lands on any given browser.
+    "    .weapon-slider { -webkit-appearance:slider-vertical; appearance:slider-vertical; writing-mode:vertical-lr; direction:rtl; width:60px; height:260px; accent-color:#ff0; }\n"
+    "    .preset-row { display:flex; gap:8px; margin-top:16px; }\n"
+    "    .preset-btn { padding:12px 14px; background:#333; color:#ff0; border:2px solid #ff0; border-radius:8px; font-size:1em; font-weight:bold; }\n"
+    "    #usValue { font-size:0.9em; color:#888; }\n"
     "    .value { font-size:2.1em; margin-top:15px; }\n"
+    "    .zero-btn { margin-top:18px; padding:14px 26px; background:#ff0; color:#000; border:none; border-radius:10px; font-size:1.1em; font-weight:bold; }\n"
     "    .hidden { display:none !important; }\n"
-    // small dot in the corner that flashes green on every successful ping
+    // Banner shown if a STOP request has not yet been confirmed by the bot
+    "    #stopBanner { position:fixed; top:0; left:0; width:100%; padding:14px; background:#f00; color:#fff; font-size:1.3em; font-weight:bold; text-align:center; z-index:10000; }\n"
+    "    #latchNote { color:#f55; font-size:1.1em; margin-top:18px; }\n"
+    // small dot in the corner that flashes green on every successful frame
     "    #pingDot { position:fixed; bottom:12px; right:18px; width:10px; height:10px; border-radius:50%; background:#555; }\n"
     "  </style>\n"
     "</head>\n"
     "<body>\n"
     "  <h1>" + botSSID + "</h1>\n"
     "  <div id=\"pingDot\"></div>\n"
+    "  <div id=\"stopBanner\" class=\"hidden\">STOP SENT - CONFIRMING...</div>\n"
     "\n"
     // Two screens that swap visibility: activation gate and the actual controls
     "  <div id=\"activateScreen\" class=\"activate-screen\">\n"
     "    <button class=\"activate-btn\" onclick=\"activateBot()\">ACTIVATE BOT</button>\n"
     "    <p style=\"margin-top:30px; font-size:1.3em;\">Press to enable controls</p>\n"
+    "    <p id=\"latchNote\">Controls are locked. The weapon will arm at zero throttle.</p>\n"
     "  </div>\n"
     "\n"
     "  <div id=\"controlScreen\" class=\"control-screen hidden\">\n"
@@ -766,109 +948,192 @@ void handleRoot() {
     "        <div class=\"joystick-base\" id=\"joyBase\"><div class=\"joystick-knob\" id=\"joyKnob\"></div></div>\n"
     "      </div>\n"
     "      <div class=\"right\">\n"
-    "        <div class=\"weapon-label\">WEAPON</div>\n"
+    "        <div class=\"weapon-label\">" + String(wLabel) + "</div>\n"
     // orient=vertical makes this a vertical slider — not all browsers honor it
-    "        <input type=\"range\" id=\"weaponSlider\" class=\"weapon-slider\" min=\"0\" max=\"180\" value=\"90\" orient=\"vertical\" oninput=\"updateWeapon(this.value)\">\n"
-    "        <div class=\"value\"><span id=\"weaponValue\">90</span>°</div>\n"
+    "        <input type=\"range\" id=\"weaponSlider\" class=\"weapon-slider\" min=\"0\" max=\"180\" value=\"" + String(wIdle) + "\" orient=\"vertical\" oninput=\"updateWeapon(this.value)\">\n"
+    "        <div class=\"value\"><span id=\"weaponValue\">" + String(wIdle) + "</span></div>\n"
+    "        <div id=\"usValue\">-- us</div>\n"
+    // Tap targets, so commanding throttle never depends on dragging a slider
+    // that a given browser may or may not have rendered usefully.
+    "        <div class=\"preset-row\">\n"
+    "          <button class=\"preset-btn\" onclick=\"setWeaponPct(25)\">25%</button>\n"
+    "          <button class=\"preset-btn\" onclick=\"setWeaponPct(50)\">50%</button>\n"
+    "          <button class=\"preset-btn\" onclick=\"setWeaponPct(75)\">75%</button>\n"
+    "          <button class=\"preset-btn\" onclick=\"setWeaponPct(100)\">100%</button>\n"
+    "        </div>\n"
+    "        <button class=\"zero-btn\" onclick=\"zeroWeapon()\">WEAPON OFF</button>\n"
     "      </div>\n"
     "    </div>\n"
     "  </div>\n"
     "\n"
     "  <script>\n"
     // ---- JavaScript that runs in the browser ----
-    "    let botActive = false;\n" // mirrors the bot's arm state on the browser side
-    "    let lastSend = 0;\n"      // timestamp of last /drive fetch
-    "    let currentX = 0, currentY = 0, weaponPos = 90;\n" // current joystick position (-1 to 1) and weapon
-    "    let isDragging = false;\n" // is the user's finger/mouse currently on the joystick?
+    "    const W_IDLE = " + String(wIdle) + ";\n" // weapon value meaning "off"
+    "    let botActive = false;\n"      // mirrors the bot's arm state
+    "    let stopPending = false;\n"    // a STOP is sent but not yet confirmed
+    "    let currentX = 0, currentY = 0, weaponPos = W_IDLE;\n"
+    "    let isDragging = false;\n"
     "    const base = document.getElementById('joyBase');\n"
     "    const knob = document.getElementById('joyKnob');\n"
     "    const pingDot = document.getElementById('pingDot');\n"
+    "    const banner = document.getElementById('stopBanner');\n"
     "\n"
     // Show the activation screen and reset everything to a safe state
     "    function showActivateScreen() {\n"
     "      botActive = false;\n"
     "      isDragging = false;\n"
     "      currentX = currentY = 0;\n"
-    "      knob.style.transform = 'translate(-37.5px, -37.5px)';\n" // knob back to center
+    "      weaponPos = W_IDLE;\n"
+    "      document.getElementById('weaponSlider').value = W_IDLE;\n"
+    "      document.getElementById('weaponValue').innerText = W_IDLE;\n"
+    "      knob.style.transform = 'translate(-37.5px, -37.5px)';\n"
     "      document.getElementById('controlScreen').classList.add('hidden');\n"
     "      document.getElementById('activateScreen').classList.remove('hidden');\n"
     "    }\n"
     "\n"
-    // Hit /activate, then swap screens if it succeeded
+    // Hit /activate, then swap screens if it succeeded. We reset the slider to
+    // zero BEFORE arming so the first frame we send can only ever be idle.
     "    function activateBot() {\n"
-    "      fetch('/activate').then(() => {\n"
+    "      if (stopPending) return;\n" // never re-arm while a stop is unconfirmed
+    "      weaponPos = W_IDLE;\n"
+    "      document.getElementById('weaponSlider').value = W_IDLE;\n"
+    "      document.getElementById('weaponValue').innerText = W_IDLE;\n"
+    "      currentX = currentY = 0;\n"
+    "      fetch('/activate').then(r => r.text()).then(t => {\n"
+    "        if (t !== 'ACTIVATED') return;\n"
     "        botActive = true;\n"
     "        document.getElementById('activateScreen').classList.add('hidden');\n"
     "        document.getElementById('controlScreen').classList.remove('hidden');\n"
-    "      });\n"
+    "      }).catch(() => {});\n"
     "    }\n"
-    // Heartbeat — called every 500ms. If the bot replies NOT_ACTIVE,
-    // the failsafe must have fired on the bot side, so we return to the
-    // activation screen to keep both sides in sync.
-    "    function sendPing() {\n"
-    "      if (!botActive) return;\n"
-    "      fetch('/ping').then(r => r.text()).then(t => {\n"
-    "        if (t === 'NOT_ACTIVE') { showActivateScreen(); return; }\n"
-    "        pingDot.style.background = '#0f0';\n" // flash green
-    "        setTimeout(() => pingDot.style.background = '#555', 200);\n" // back to gray
-    "      }).catch(() => { pingDot.style.background = '#f00'; });\n" // red = network error
+    "\n"
+    // ---- THE CONTROL FRAME ----
+    // Fixed 100ms timer, sends the CURRENT state unconditionally — including
+    // "everything zero". The old code only sent a frame when something was
+    // moving, which meant the command that said "weapon off" was the one
+    // command that never got sent.
+    //
+    // inFlight is critical. The ESP32's WebServer handles exactly ONE request
+    // at a time, and each fetch is a fresh TCP connection. Fire frames faster
+    // than the bot can answer them and they queue up in the browser, latency
+    // grows without bound, the bot stops hearing fresh frames, and the failsafe
+    // trips — which looks exactly like "the UI bounces back to ACTIVATE".
+    // So: never more than one outstanding request. If the previous frame
+    // hasn't come back yet, skip this one. The bot's state is unchanged by a
+    // skipped frame; only the newest values matter anyway.
+    "    let inFlight = false;\n"
+    "    function sendFrame() {\n"
+    "      if (!botActive || inFlight) return;\n"
+    "      const forward = currentY * 90;\n"
+    "      const steer = currentX * 65;\n"
+    "      let left = Math.max(0, Math.min(180, Math.round(90 + forward + steer)));\n"
+    "      let right = Math.max(0, Math.min(180, Math.round(90 + forward - steer)));\n"
+    "      inFlight = true;\n"
+    // AbortController stops a stalled connection from blocking frames forever
+    "      const ac = new AbortController();\n"
+    "      const killer = setTimeout(() => ac.abort(), 600);\n"
+    "      fetch(`/drive?left=${left}&right=${right}&weapon=${weaponPos}`, {signal: ac.signal})\n"
+    "        .then(r => r.text()).then(t => {\n"
+    "          clearTimeout(killer); inFlight = false;\n"
+    "          if (t.startsWith('NOT_ACTIVE')) { showActivateScreen(); return; }\n"
+    "          const parts = t.split(',');\n"
+    "          if (parts.length > 1) document.getElementById('usValue').innerText = parts[1] + ' us';\n"
+    "          pingDot.style.background = '#0f0';\n"
+    "          setTimeout(() => pingDot.style.background = '#555', 60);\n"
+    "        })\n"
+    "        .catch(() => { clearTimeout(killer); inFlight = false; pingDot.style.background = '#f00'; });\n"
     "    }\n"
-    // Calculate where the knob should be based on touch/mouse position,
-    // clamp it inside the circular base, then immediately send a drive command.
+    "\n"
+    // Calculate where the knob should be based on touch/mouse position and
+    // clamp it inside the circular base. No fetch here — the 50ms frame
+    // timer is the only thing that talks to the bot, so there is exactly one
+    // code path carrying commands and nothing can be dropped by a rate limit.
     "    function moveKnob(clientX, clientY) {\n"
     "      if (!botActive) return;\n"
     "      isDragging = true;\n"
-    "      const rect = base.getBoundingClientRect();\n" // get the joystick base position on screen
-    "      let x = clientX - rect.left - 115;\n" // offset so center = (0,0)
+    "      const rect = base.getBoundingClientRect();\n"
+    "      let x = clientX - rect.left - 115;\n"
     "      let y = clientY - rect.top - 115;\n"
-    "      const dist = Math.sqrt(x*x + y*y);\n" // distance from center (Pythagorean theorem)
-    "      if (dist > 115) { x = (x/dist)*115; y = (y/dist)*115; }\n" // clamp to circle radius
+    "      const dist = Math.sqrt(x*x + y*y);\n"
+    "      if (dist > 115) { x = (x/dist)*115; y = (y/dist)*115; }\n"
     "      knob.style.transform = `translate(${x-37.5}px, ${y-37.5}px)`;\n"
-    "      currentX = x / 115; currentY = -y / 115;\n" // normalize to -1..1 (Y flipped: up = positive)
-    "      sendDrive();\n"
+    "      currentX = x / 115; currentY = -y / 115;\n"
     "    }\n"
-    // Finger/mouse lifted — snap the knob to center and tell the bot to stop
+    // Finger/mouse lifted — snap the knob to center. The next frame (<=50ms
+    // away) carries the neutral value to the bot.
     "    function resetKnob() {\n"
     "      isDragging = false;\n"
     "      knob.style.transform = 'translate(-37.5px, -37.5px)';\n"
     "      currentX = currentY = 0;\n"
-    "      fetch('/stop');\n"
-    "    }\n"
-    // Convert normalized joystick X/Y into left/right motor values and send them.
-    // Rate-limited to once per 40ms (~25 Hz) so we don't flood the bot.
-    "    function sendDrive() {\n"
-    "      if (!botActive) return;\n"
-    "      const now = Date.now();\n"
-    "      if (now - lastSend < 40) return;\n" // too soon — skip this call
-    "      lastSend = now;\n"
-    // Tank-style mixing: forward/back from Y, steering from X
-    "      const forward = currentY * 90;\n" // max ±90 from center
-    "      const steer = currentX * 65;\n"   // slightly less than forward for smoother turns
-    "      let left = Math.max(0, Math.min(180, Math.round(90 + forward + steer)));\n"
-    "      let right = Math.max(0, Math.min(180, Math.round(90 + forward - steer)));\n"
-    // Skip the fetch if everything is at neutral — no point sending a no-op
-    "      if (Math.abs(left-90)>5 || Math.abs(right-90)>5 || Math.abs(weaponPos-90)>5)\n"
-    "        fetch(`/drive?left=${left}&right=${right}&weapon=${weaponPos}`);\n"
     "    }\n"
     // Called whenever the weapon slider moves
     "    function updateWeapon(val) {\n"
-    "      if (!botActive) return;\n"
+    "      if (!botActive) { document.getElementById('weaponSlider').value = W_IDLE; return; }\n"
     "      weaponPos = parseInt(val);\n"
     "      document.getElementById('weaponValue').innerText = weaponPos;\n"
-    "      sendDrive();\n"
     "    }\n"
-    // Emergency stop: disarm the bot, reset slider, go back to activation screen
+    // One-tap throttle cut that leaves the bot armed and drivable
+    "    function zeroWeapon() {\n"
+    "      weaponPos = W_IDLE;\n"
+    "      document.getElementById('weaponSlider').value = W_IDLE;\n"
+    "      document.getElementById('weaponValue').innerText = W_IDLE;\n"
+    "    }\n"
+    // Preset throttle buttons. pct is 0-100 of the weapon's usable range.
+    "    function setWeaponPct(pct) {\n"
+    "      if (!botActive) return;\n"
+    "      weaponPos = Math.round(W_IDLE + (180 - W_IDLE) * pct / 100);\n"
+    "      document.getElementById('weaponSlider').value = weaponPos;\n"
+    "      document.getElementById('weaponValue').innerText = weaponPos;\n"
+    "    }\n"
+    "\n"
+    // ---- EMERGENCY STOP ----
+    // Local state is killed instantly so this browser stops generating
+    // frames, then we hammer /deactivate until the bot actually confirms it.
+    // A single un-acknowledged request over Wi-Fi is not an emergency stop;
+    // if the one packet is lost, the weapon keeps spinning while the UI
+    // cheerfully shows the activation screen. So we retry until we hear back.
     "    function stopAll() {\n"
-    "      fetch('/deactivate');\n"
-    "      weaponPos = 90;\n"
-    "      document.getElementById('weaponSlider').value = 90;\n"
-    "      document.getElementById('weaponValue').innerText = 90;\n"
+    "      botActive = false;\n"
+    "      isDragging = false;\n"
+    "      stopPending = true;\n"
+    "      banner.classList.remove('hidden');\n"
+    "      banner.innerText = 'STOP SENT - CONFIRMING...';\n"
     "      showActivateScreen();\n"
+    "      confirmStop(0);\n"
     "    }\n"
-    // While dragging, keep firing sendDrive even if the finger hasn't moved —
-    // this keeps the failsafe timer alive on the bot side.
-    "    setInterval(() => { if (isDragging && botActive) sendDrive(); }, 45);\n"
-    "    setInterval(sendPing, 500);\n"
+    "    function confirmStop(attempt) {\n"
+    "      if (!stopPending) return;\n"
+    "      fetch('/deactivate').then(r => r.text()).then(t => {\n"
+    "        if (t === 'DEACTIVATED') {\n"
+    "          stopPending = false;\n"
+    "          banner.classList.add('hidden');\n"
+    "        } else { setTimeout(() => confirmStop(attempt+1), 200); }\n"
+    "      }).catch(() => {\n"
+    "        banner.innerText = 'STOP NOT CONFIRMED - CUT POWER AT THE BOT';\n"
+    "        setTimeout(() => confirmStop(attempt+1), 200);\n"
+    "      });\n"
+    "    }\n"
+    "\n"
+    // The single command loop. 20Hz, always running, always the same path.
+    "    setInterval(sendFrame, 100);\n"
+    "\n"
+    // If the page is backgrounded, hidden, or closed, treat it as a stop.
+    // Mobile browsers throttle timers in background tabs, which would starve
+    // the frame loop and trip the failsafe anyway — but we'd rather stop
+    // deliberately than rely on a timeout.
+    "    document.addEventListener('visibilitychange', () => { if (document.hidden && botActive) stopAll(); });\n"
+    "    window.addEventListener('pagehide', () => { navigator.sendBeacon ? navigator.sendBeacon('/deactivate') : fetch('/deactivate'); });\n"
+    // NOTE: there is deliberately NO window 'blur' handler here. Blur fires
+    // constantly for harmless reasons — tapping the address bar, a notification
+    // sliding down, the on-screen keyboard, even hiding the focused ACTIVATE
+    // button when we swap screens. Wiring an e-stop to it makes the bot
+    // un-armable. visibilitychange and pagehide are the meaningful signals.
+    "\n"
+    // Spacebar / Escape as a keyboard panic button when driving from a laptop
+    "    document.addEventListener('keydown', e => {\n"
+    "      if (e.code === 'Space' || e.code === 'Escape') { e.preventDefault(); stopAll(); }\n"
+    "    });\n"
+    "\n"
     // Touch events (mobile) — preventDefault stops the page from scrolling
     "    base.addEventListener('touchstart', e => { e.preventDefault(); moveKnob(e.touches[0].clientX, e.touches[0].clientY); });\n"
     "    base.addEventListener('touchmove', e => { e.preventDefault(); moveKnob(e.touches[0].clientX, e.touches[0].clientY); });\n"
@@ -887,5 +1152,6 @@ void handleRoot() {
 
   server.send(200, "text/html", html);
 }
+
 #endif // CONNECTION_WIFI
 
