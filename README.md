@@ -12,7 +12,7 @@ This project is to create ant weight battle bots that use the following componen
 
 - ESP32 based (All wiring, etc. in this sketch is for ESP32-S3-WROOM-1, but will be testing with ESP32-S3-Zero (mini) )
 - N20 motors (with or without encoders, wiring diagrams below for either)
-- Wi-Fi and/or BLE based connectivity
+- Wi-Fi and/or BLE based connectivity (BLE requires an Android app that we may add in the future)
 - 150g max (5.3oz)
 - A fail-safe is required (bot must stop if signal is lost in a minimal amount of time)
 - No liquid-based weapons, glue, adhesives, or explosives.
