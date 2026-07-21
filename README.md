@@ -6,6 +6,8 @@ NOTE: THAT MEANS THINGS ARE CHANGING AND THINGS WILL CHANGE
 
 NOTE: USE AT YOUR OWN RISK
 
+Having said all of that, we have working code and design, so v1.0.0 is out the door
+
 This project is to create ant weight battle bots that use the following components and/or constraints:
 
 - ESP32 based (All wiring, etc. in this sketch is for ESP32-S3-WROOM-1, but will be testing with ESP32-S3-Zero (mini) )
