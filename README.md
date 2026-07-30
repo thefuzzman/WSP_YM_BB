@@ -12,13 +12,12 @@ This project is to create ant weight battle bots that use the following componen
 
 - ESP32 based (All wiring, etc. in this sketch is for ESP32-S3-WROOM-1, but will be testing with ESP32-S3-Zero (mini) )
 - N20 motors (with or without encoders, wiring diagrams below for either)
-- Wi-Fi and/or BLE based connectivity (BLE requires an Android app that we may add in the future)
-- 150g max (5.3oz)
+- BLE based connection to an Android device running the APK in this repo
+- - 150g max (5.3oz)
 - A fail-safe is required (bot must stop if signal is lost in a minimal amount of time)
 - No liquid-based weapons, glue, adhesives, or explosives.
 - Generally, no nets, fabrics, or entangling weapons.
 - All sharp edges must be covered when outside the arena.
 - Robots must be constructed primarily from 3D printed parts
--   Only PLA is allowed as a material (except TPU 85/90 for wheel covers if not using o-rings for grip)
-
+**- Only PLA is allowed as a material (except TPU 85/90 for wheel covers if not using o-rings for grip)
 SEE THE "Combat Robot Build Guide" for parts, assembly, programming, and more
