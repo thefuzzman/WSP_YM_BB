@@ -24,7 +24,9 @@ SEE THE "Combat Robot Build Guide" for parts, assembly, programming, and more
 
 Android APK is not compatible with iOS (Apple)
 
-Download directly to your device.  Open your file manager (typically Files).  You might need to 
+Download directly to your device.  Open your file manager (typically Files).  You might need to enable untrusted sources.  
+
+Yes, I am an untrusted source.  Just a random guy on the internet.  The folks we're doing this with, however, know me and know this is what we're using.
 
 Want the source?  https://github.com/thefuzzman/AntbotAPK/tree/main.
 
