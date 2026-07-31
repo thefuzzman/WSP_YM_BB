@@ -25,3 +25,7 @@ SEE THE "Combat Robot Build Guide" for parts, assembly, programming, and more
 Android APK is not compatible with iOS (Apple)
 
 Download directly to your device.  Open your file manager (typically Files).  You might need to 
+
+Want the source?  https://github.com/thefuzzman/AntbotAPK/tree/main.
+
+NOTE that the APK is entirely vibe coded.  Thank you Anthropic!
