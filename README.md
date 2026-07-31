@@ -6,7 +6,7 @@ NOTE: THAT MEANS THINGS ARE CHANGING AND THINGS WILL CHANGE
 
 NOTE: USE AT YOUR OWN RISK
 
-Having said all of that, we have working code and design, so v1.0.0 is out the door
+Having said all of that, we have working code and design, so v1.1.0 is out the door.
 
 This project is to create ant weight battle bots that use the following components and/or constraints:
 
@@ -21,3 +21,7 @@ This project is to create ant weight battle bots that use the following componen
 - Robots must be constructed primarily from 3D printed parts
 **- Only PLA is allowed as a material (except TPU 85/90 for wheel covers if not using o-rings for grip)
 SEE THE "Combat Robot Build Guide" for parts, assembly, programming, and more
+
+Android APK is not compatible with iOS (Apple)
+
+Download directly to your device.  Open your file manager (typically Files).  You might need to 
