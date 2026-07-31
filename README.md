@@ -10,7 +10,7 @@ Having said all of that, we have working code and design, so v1.1.0 is out the d
 
 This project is to create ant weight battle bots that use the following components and/or constraints:
 
-- ESP32 based (All wiring, etc. in this sketch is for ESP32-S3-WROOM-1, but will be testing with ESP32-S3-Zero (mini) )
+- ESP32 based (All wiring, etc. in this sketch is for ESP32-S3-Zero (mini) )
 - N20 motors (with or without encoders, wiring diagrams below for either)
 - BLE based connection to an Android device running the APK in this repo
 - - 150g max (5.3oz)
